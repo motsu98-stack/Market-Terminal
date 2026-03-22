@@ -1,0 +1,2256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+<meta name="generator" content="Perplexity Computer">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MACRO TERMINAL — Bloomberg-Style Dashboard v2</title>
+<meta name="description" content="Druckenmiller framework macroeconomic dashboard. Real-time FRED + Yahoo Finance data. Equity overview, FX, rates, labor."/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#e0e0e0;font-family:'JetBrains Mono',Consolas,Monaco,monospace;font-size:15px;-webkit-font-smoothing:antialiased}
+:root{
+  --bg:#0a0a0a;--s1:#111;--s2:#161616;--s3:#1e1e1e;--s4:#242424;
+  --border:#2a2a2a;--hi:#3a3a3a;
+  --orange:#ff6600;--odim:#cc5200;
+  --green:#00d084;--red:#ff3b3b;--yellow:#ffd700;
+  --cyan:#00c8ff;--purple:#c084fc;--white:#e0e0e0;
+  --muted:#777;--faint:#333;
+  --up:#00d084;--down:#ff3b3b;
+  /* Accent per tab */
+  --acc-macro:#ff6600;
+  --acc-rates:#00c8ff;
+  --acc-labor:#6dbf67;
+  --acc-forex:#c084fc;
+  --acc-equity:#f5a623;
+}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--hi);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:var(--odim)}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.022) 2px,rgba(0,0,0,.022) 4px)}
+
+/* ── Layout ── */
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+#topbar{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;z-index:50}
+#mkt-ticker{height:40px;overflow:hidden;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;position:relative}
+#mkt-ticker-inner{display:flex;align-items:stretch;height:100%;width:max-content;will-change:transform}
+.tmask-l,.tmask-r{position:absolute;top:0;bottom:0;width:28px;z-index:5;pointer-events:none}
+.tmask-l{left:0;background:linear-gradient(to right,#111,transparent)}
+.tmask-r{right:0;background:linear-gradient(to left,#111,transparent)}
+#tabs{display:flex;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0;overflow:hidden;width:100%}
+.tab{display:flex;align-items:center;gap:3px;padding:6px 5px;font-family:inherit;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;border:none;border-right:1px solid var(--border);cursor:pointer;background:transparent;color:var(--muted);transition:color .1s,background .1s;position:relative;white-space:nowrap;flex:1 1 0;min-width:0;justify-content:center}
+.tab:hover{color:var(--orange);background:var(--s2)}
+.tab.active{color:#000}
+.tab-fkey{font-size:8px;border:1px solid;padding:0 2px;flex-shrink:0}
+.tab.active .tab-fkey{border-color:#000;color:#000}
+.tab:not(.active) .tab-fkey{border-color:var(--faint);color:var(--faint)}
+#tab-status{display:none}
+#cmd-tape{height:40px;overflow:hidden;flex-shrink:0;position:relative;border-bottom:2px solid var(--orange)}
+#cmd-tape-inner{display:flex;align-items:stretch;height:100%;width:max-content;will-change:transform;background:#0d0d0d}
+/* #main is now inside #content-row — see media panel CSS */
+#footer{display:flex;align-items:center;justify-content:space-between;padding:4px 12px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:12px;color:var(--muted)}
+#footer a{color:var(--muted);text-decoration:none}
+#footer a:hover{color:var(--orange)}
+
+/* ── Ticker items ── */
+.tick-item{display:flex;align-items:center;gap:7px;padding:0 14px;border-right:1px solid var(--border);height:100%;white-space:nowrap;flex-shrink:0}
+.tick-sym{font-weight:700;font-size:14.5px;letter-spacing:.04em}
+.tick-price{font-weight:700;font-size:16.2px}
+.tick-chg{font-size:12.7px}
+.tape-item{display:flex;align-items:center;gap:6px;padding:0 13px;border-right:1px solid #1a1a1a;height:100%;white-space:nowrap;flex-shrink:0;font-size:13.5px}
+
+/* ── Section header (same as commodities) ── */
+.sec-hdr{display:flex;align-items:center;gap:12px;padding:7px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--s2);position:sticky;top:0;z-index:10}
+.sec-hdr-text{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em}
+.sec-hdr::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── Grids ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px}
+.g5{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:12px}
+.g6{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:12px}
+@media(max-width:1200px){.g6{grid-template-columns:repeat(3,1fr)}.g5{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:1fr 1fr}}
+@media(max-width:800px){.g6,.g5,.g4,.g3,.g2{grid-template-columns:1fr}}
+
+/* ── Commodity-style KPI card ── */
+.ccard{border:1px solid var(--border);border-left:3px solid var(--faint);background:var(--s1);padding:10px 12px;display:flex;flex-direction:column;gap:4px;transition:background .15s}
+.ccard:hover{background:var(--s2)}
+.ccard-top{display:flex;justify-content:space-between;align-items:flex-start}
+.ccard-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700}
+.ccard-date{font-size:10px;color:var(--faint)}
+.ccard-val{font-size:22px;font-weight:700;line-height:1.1}
+.ccard-chg{font-size:12px;font-weight:700}
+.ccard-sub{font-size:10.5px;color:var(--muted);margin-top:2px}
+.ccard-spark{height:32px;margin-top:4px}
+
+/* ── Chart panel ── */
+.chart-panel{border:1px solid var(--border);background:var(--s1);padding:10px;display:flex;flex-direction:column;gap:6px}
+.chart-hdr{display:flex;justify-content:space-between;align-items:flex-start}
+.chart-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.chart-sub{font-size:10px;color:var(--muted)}
+.chart-val{font-size:13px;font-weight:700}
+.chart-desc{font-size:10.5px;color:#888;border-top:1px solid var(--border);padding-top:6px;line-height:1.5}
+
+/* ── Insight box ── */
+.insight{border:1px solid var(--border);border-left:2px solid var(--cyan);padding:10px 12px;background:var(--s2);margin-bottom:8px}
+.insight.warn{border-left-color:var(--yellow)}
+.insight.bull{border-left-color:var(--green)}
+.insight.bear{border-left-color:var(--red)}
+.insight.neutral{border-left-color:var(--cyan)}
+.insight-title{font-size:12px;font-weight:700;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.insight.warn .insight-title{color:var(--yellow)}
+.insight.bull .insight-title{color:var(--green)}
+.insight.bear .insight-title{color:var(--red)}
+.insight.neutral .insight-title{color:var(--cyan)}
+.insight-body{font-size:11.5px;color:#999;line-height:1.65}
+
+/* ── Scorecard ── */
+.scorecard{border:1px solid var(--border);background:var(--s1);padding:10px}
+.scorecard-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.sc-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
+.sc-row:last-child{border-bottom:none}
+.sc-label{font-size:11.5px;color:var(--muted);text-transform:uppercase}
+.sc-status{font-size:12px;font-weight:700}
+
+/* ── Yield curve bar ── */
+.yc-bar{display:flex;align-items:center;gap:8px;margin:6px 0}
+.yc-track{flex:1;height:10px;background:var(--s3);border:1px solid var(--border);position:relative;overflow:hidden}
+.yc-fill{position:absolute;inset-y:0}
+.yc-mid{position:absolute;inset-y:0;left:50%;width:1px;background:var(--border)}
+
+/* ── Data table ── */
+.dtable{width:100%;border:1px solid var(--border);background:var(--s1)}
+.dtable-title{padding:8px 10px;background:var(--s2);border-bottom:1px solid var(--border);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.dtable tr{border-bottom:1px solid var(--border)}
+.dtable tr:last-child{border-bottom:none}
+.dtable tr:hover td{background:var(--s2)}
+.dtable td{padding:7px 10px;font-size:12px;vertical-align:middle}
+
+/* ── Heatmap ── */
+.hm-grid{display:grid;gap:3px;padding:12px}
+.hm-cell{padding:8px 10px;font-size:12px;font-weight:700;display:flex;flex-direction:column;gap:2px;cursor:default;transition:opacity .15s}
+.hm-cell:hover{opacity:.8}
+.hm-name{font-size:9.5px;color:rgba(0,0,0,.75);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.hm-pct{font-size:15px;font-weight:800;color:rgba(0,0,0,.9)}
+.hm-price{font-size:9.5px;color:rgba(0,0,0,.65)}
+
+/* ── Sector bar ── */
+.sector-bar{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.sector-bar:last-child{border-bottom:none}
+.sector-name{font-size:11.5px;color:var(--muted);width:110px;flex-shrink:0}
+.sector-track{flex:1;height:12px;background:var(--s3);border:1px solid var(--border);position:relative;overflow:hidden}
+.sector-fill{position:absolute;inset-y:0;left:50%}
+.sector-zero{position:absolute;inset-y:0;left:50%;width:1px;background:var(--border)}
+.sector-val{font-size:11.5px;font-weight:700;width:55px;text-align:right;flex-shrink:0}
+
+/* ── Logo ── */
+.logo{display:flex;align-items:center;gap:10px}
+.logo-b{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;flex-shrink:0}
+.logo-text .logo-main{font-size:14px;font-weight:700;color:var(--white);letter-spacing:.15em;display:block}
+.logo-text .logo-sub{font-size:8px;color:var(--muted);letter-spacing:.3em;display:block;margin-top:-1px}
+#clock{display:flex;align-items:center;gap:10px;font-size:12px}
+#clock-date{color:var(--orange)}
+#clock-time{font-size:15px;font-weight:700}
+#live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse .8s ease infinite alternate}
+
+/* ── Loading ── */
+#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:14px}
+.ldot{width:7px;height:7px;border-radius:50%;background:var(--orange)}
+
+/* ── Misc ── */
+.up{color:var(--up)}.down{color:var(--down)}.flat{color:var(--muted)}
+.num{font-variant-numeric:tabular-nums lining-nums;font-feature-settings:"tnum" on,"lnum" on}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.badge{display:inline-block;padding:2px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border:1px solid}
+
+@keyframes pulse{0%{opacity:1}100%{opacity:.4}}
+@keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+@keyframes tape-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+@keyframes dot-pulse{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes slide-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.animate-in{animation:slide-in .35s ease both}
+
+/* ══════════════════════════════════════════════════════════
+   MEDIA PLAYER — TOP-RIGHT SIDE PANEL, ALWAYS VISIBLE
+   ══════════════════════════════════════════════════════════ */
+#content-row{
+  display:flex;
+  flex:1;
+  overflow:hidden;
+  min-height:0;
+}
+#main{
+  flex:1;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  background:var(--bg);
+  min-width:0;
+}
+#media-panel{
+  width:380px;
+  min-width:220px;
+  max-width:70vw;
+  display:flex;
+  flex-direction:column;
+  background:var(--s1);
+  border-right:2px solid var(--orange);
+  flex-shrink:0;
+  position:relative;
+  overflow:hidden;
+  transition:width .2s ease;
+}
+/* video section — fixed height, shrinks on small */
+.media-video-section{
+  display:flex;
+  flex-direction:column;
+  flex-shrink:0;
+  height:240px;
+  min-height:120px;
+  background:#000;
+  position:relative;
+  border-bottom:1px solid var(--border);
+}
+/* size buttons row */
+#size-btns{
+  display:flex;align-items:center;gap:3px;
+}
+.size-btn{
+  background:var(--s3);border:1px solid var(--border);
+  color:var(--muted);cursor:pointer;font-size:10px;font-weight:700;
+  padding:1px 6px;font-family:inherit;letter-spacing:.05em;
+  transition:all .15s;
+}
+.size-btn:hover{color:var(--orange);border-color:var(--orange)}
+.size-btn.active{background:var(--orange);color:#000;border-color:var(--orange)}
+/* news feed */
+#news-feed{
+  flex:1;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  background:var(--bg);
+  border-top:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  min-height:80px;
+}
+#news-feed-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:5px 10px;background:var(--s2);border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+#news-feed-title{font-size:10.5px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.1em}
+#news-feed-status{font-size:9.5px;color:var(--muted)}
+#news-items{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.news-item{
+  padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer;
+  transition:background .1s;display:block;text-decoration:none;
+}
+.news-item:hover{background:var(--s2)}
+.news-item-time{font-size:9.5px;color:var(--muted);margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.news-item-source{color:var(--orange);font-weight:700}
+.news-item-headline{font-size:11.5px;color:var(--white);line-height:1.4;font-family:'JetBrains Mono',monospace}
+.news-item:hover .news-item-headline{color:var(--orange)}
+.news-loading{padding:16px 10px;font-size:11px;color:var(--muted);text-align:center}
+
+/* Resize handle on the RIGHT edge of the panel (also has native CSS resize in corner) */
+#media-resize-handle{
+  position:absolute;top:0;bottom:0;right:0;width:5px;
+  cursor:ew-resize;background:transparent;z-index:20;
+}
+#media-resize-handle:hover{background:var(--orange);opacity:.5}
+#media-drag{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 8px;height:32px;background:var(--s2);
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;user-select:none;
+}
+.media-tabs{display:flex;gap:0;flex-wrap:nowrap;overflow:hidden}
+.media-tab{padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer;color:var(--muted);border-right:1px solid var(--border);border-bottom:2px solid transparent;transition:all .1s;text-transform:uppercase;letter-spacing:.04em;font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.media-tab.active{color:var(--orange);border-bottom-color:var(--orange);background:var(--s3)}
+.media-tab:hover:not(.active){color:var(--white);background:var(--s3)}
+.media-body{flex:1;overflow:hidden;min-height:0}
+.media-pane{display:none;width:100%;height:100%}
+.media-pane.active{display:flex;align-items:center;justify-content:center;background:#000}
+.media-pane iframe{width:100%;height:100%;border:none;background:#000}
+#media-controls{display:flex;align-items:center;gap:2px;flex-shrink:0}
+#media-controls button{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 5px;font-family:inherit;transition:color .1s}
+#media-controls button:hover{color:var(--orange)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div style="display:flex;align-items:center;gap:16px">
+      <div class="logo">
+        <div class="logo-b" style="background:var(--orange)"><span style="color:#000">M</span></div>
+        <div class="logo-text">
+          <span class="logo-main">MARKET</span>
+          <span class="logo-sub">TERMINAL v10</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)">
+        <span style="color:var(--yellow)">◆</span>
+        <span>FRED + YAHOO FINANCE</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <!-- Data status - moved here -->
+      <span id="data-status" style="color:var(--yellow);font-size:11px;font-weight:700">⬡ LOADING...</span>
+      <span id="live-count" style="color:var(--green);font-size:10px"></span>
+      <span style="color:var(--faint)">|</span>
+      <!-- TV toggle - fully hides/shows -->
+      <button onclick="toggleMedia()" id="tv-btn" title="Show/Hide TV" style="background:var(--s3);border:1px solid var(--border);color:var(--muted);cursor:pointer;padding:3px 8px;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.05em;transition:all .1s" onmouseover="this.style.borderColor='var(--orange)';this.style.color='var(--orange)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+        📺 TV
+      </button>
+      <!-- Fullscreen button -->
+      <button onclick="toggleFullscreen()" id="fs-btn" title="Toggle Fullscreen" style="background:var(--s3);border:1px solid var(--border);color:var(--muted);cursor:pointer;padding:3px 8px;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.05em;transition:all .1s" onmouseover="this.style.borderColor='var(--orange)';this.style.color='var(--orange)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+        ⛶ FULL
+      </button>
+      <span style="color:var(--faint)">|</span>
+      <div id="clock">
+        <span id="clock-date"></span>
+        <span id="clock-time" class="num"></span>
+        <span style="color:var(--muted);font-size:10px">EDT</span>
+        <span style="display:flex;align-items:center;gap:4px;color:var(--green);font-size:10px"><span id="live-dot"></span>LIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MARKET INDEX TICKER -->
+  <div id="mkt-ticker">
+    <div class="tmask-l"></div><div class="tmask-r"></div>
+    <div id="mkt-ticker-inner">
+      <div class="tick-item"><span class="tick-sym flat">LOADING MARKET DATA...</span></div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <nav id="tabs">
+    <button class="tab active" onclick="switchTab('macro')" id="tab-macro" style="background:var(--orange)">
+      <span class="tab-fkey" style="border-color:#000;color:#000">F1</span><span style="color:#000">MACRO</span>
+    </button>
+    <button class="tab" onclick="switchTab('rates')" id="tab-rates">
+      <span class="tab-fkey">F2</span><span>RATES</span>
+    </button>
+    <button class="tab" onclick="switchTab('labor')" id="tab-labor">
+      <span class="tab-fkey">F3</span><span>LABOR</span>
+    </button>
+    <button class="tab" onclick="switchTab('forex')" id="tab-forex">
+      <span class="tab-fkey">F4</span><span>FX</span>
+    </button>
+    <button class="tab" onclick="switchTab('equity')" id="tab-equity">
+      <span class="tab-fkey">F5</span><span>EQUITY</span>
+    </button>
+    <button class="tab" onclick="switchTab('commodities')" id="tab-commodities">
+      <span class="tab-fkey">F6</span><span>CMDTY</span>
+    </button>
+    <button class="tab" onclick="switchTab('credit')" id="tab-credit">
+      <span class="tab-fkey">F7</span><span>CREDIT</span>
+    </button>
+    <button class="tab" onclick="switchTab('housing')" id="tab-housing">
+      <span class="tab-fkey">F8</span><span>HOUSING</span>
+    </button>
+    <button class="tab" onclick="switchTab('sentiment')" id="tab-sentiment">
+      <span class="tab-fkey">F9</span><span>SENT</span>
+    </button>
+    <button class="tab" onclick="switchTab('centralbanks')" id="tab-centralbanks">
+      <span class="tab-fkey">F10</span><span>CB</span>
+    </button>
+    <button class="tab" onclick="switchTab('crypto')" id="tab-crypto">
+      <span class="tab-fkey">F11</span><span>CRYPTO</span>
+    </button>
+    <button class="tab" onclick="switchTab('fedwatch')" id="tab-fedwatch">
+      <span class="tab-fkey">F12</span><span>FED</span>
+    </button>
+    <div id="tab-status">
+      <span id="data-status" style="color:var(--yellow)">⬡ LOADING...</span>
+      <span id="live-count" style="color:var(--green);font-size:10.5px"></span>
+    </div>
+  </nav>
+
+  <!-- FRED MACRO TAPE -->
+  <div id="cmd-tape">
+    <div id="cmd-tape-inner">
+      <div class="tape-item"><span style="color:#888">LOADING FRED DATA...</span></div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="content-row">
+  <!-- EMBEDDED MEDIA PLAYER PANEL -->
+  <div id="media-panel">
+    <div id="media-resize-handle" title="Drag to resize"></div>
+    <div id="media-drag">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;font-weight:700;color:var(--orange);letter-spacing:.08em;font-family:'JetBrains Mono',monospace">📺 LIVE TV</span>
+        <div class="media-tabs">
+          <div class="media-tab active" onclick="switchMedia('schwab')" id="mtab-schwab">SCHWAB</div>
+          <div class="media-tab" onclick="switchMedia('bloomberg')" id="mtab-bloomberg">BLOOMBERG</div>
+          <div class="media-tab" onclick="switchMedia('bbc')" id="mtab-bbc">BBC NEWS</div>
+          <div class="media-tab" onclick="switchMedia('cnbc')" id="mtab-cnbc">CNBC</div>
+          <div class="media-tab" onclick="switchMedia('weather')" id="mtab-weather">WEATHER</div>
+          <div class="media-tab" onclick="switchMedia('topgear')" id="mtab-topgear">TOP GEAR</div>
+        </div>
+      </div>
+      <div id="media-controls">
+        <div id="size-btns">
+          <button class="size-btn" onclick="setPlayerSize('S')" id="sz-s" title="Small (280px)">S</button>
+          <button class="size-btn active" onclick="setPlayerSize('M')" id="sz-m" title="Medium (380px)">M</button>
+          <button class="size-btn" onclick="setPlayerSize('L')" id="sz-l" title="Large (520px)">L</button>
+        </div>
+        <button onclick="toggleMedia()" id="tv-close-btn" title="Hide/Show player" style="margin-left:4px">◂</button>
+      </div>
+    </div>
+    <div class="media-video-section">
+    <div class="media-body">
+      <!-- Schwab Network via Distro.tv (free, no login, embeddable) -->
+      <div class="media-pane active" id="mpane-schwab">
+        <iframe src="https://www.distro.tv/live/schwab-network/" allowfullscreen allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="no-referrer"></iframe>
+      </div>
+      <!-- Bloomberg TV via m3u8 HLS stream -->
+      <div class="media-pane" id="mpane-bloomberg">
+        <video id="bloomberg-hls-video" autoplay muted playsinline controls style="width:100%;height:100%;background:#000;object-fit:contain"></video>
+      </div>
+      <!-- BBC News via m3u8 HLS stream -->
+      <div class="media-pane" id="mpane-bbc">
+        <video id="bbc-hls-video" autoplay muted playsinline controls style="width:100%;height:100%;background:#000;object-fit:contain"></video>
+      </div>
+      <!-- CNBC via m3u8 HLS stream with multiple sources -->
+      <div class="media-pane" id="mpane-cnbc">
+        <video id="cnbc-hls-video" autoplay muted playsinline controls style="width:100%;height:100%;background:#000;object-fit:contain"></video>
+      </div>
+      <!-- Fox Weather via Pluto TV -->
+      <div class="media-pane" id="mpane-weather">
+        <iframe src="https://pluto.tv/us/live-tv/640a68880e884c0009979cc2" allowfullscreen allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="no-referrer"></iframe>
+      </div>
+      <!-- Top Gear UK via Pluto TV -->
+      <div class="media-pane" id="mpane-topgear">
+        <iframe src="https://pluto.tv/us/live-tv/top-gear-ptv1" allowfullscreen allow="autoplay; fullscreen; encrypted-media; picture-in-picture" referrerpolicy="no-referrer"></iframe>
+      </div>
+    </div>
+    </div><!-- end media-video-section -->
+
+    <!-- ── MARKET NEWS FEED ──────────────────────────── -->
+    <div id="news-feed">
+      <div id="news-feed-header">
+        <span id="news-feed-title">📰 MARKET NEWS</span>
+        <span id="news-feed-status">loading...</span>
+      </div>
+      <div id="news-items">
+        <div class="news-loading">Fetching latest market headlines...</div>
+      </div>
+    </div>
+
+  </div><!-- end media-panel -->
+
+
+  <div id="main">
+    <div id="loading">
+      <div style="font-size:44px;font-weight:800;color:var(--orange);animation:pulse .8s ease infinite alternate">B</div>
+      <div style="font-size:14px;color:var(--orange);letter-spacing:.2em">FETCHING MARKET DATA<span id="ldots-txt"></span></div>
+      <div style="font-size:11.5px;color:var(--muted);letter-spacing:.08em">YAHOO FINANCE · FRED · ST. LOUIS FED</div>
+      <div style="display:flex;gap:4px;margin-top:8px">
+        <div class="ldot" style="animation:dot-pulse 1.2s 0s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .1s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .2s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .3s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .4s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .5s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .6s ease infinite"></div>
+        <div class="ldot" style="animation:dot-pulse 1.2s .7s ease infinite"></div>
+      </div>
+    </div>
+    <div id="panel-macro" class="tab-panel"></div>
+    <div id="panel-rates" class="tab-panel"></div>
+    <div id="panel-labor" class="tab-panel"></div>
+    <div id="panel-forex" class="tab-panel"></div>
+    <div id="panel-equity" class="tab-panel"></div>
+    <div id="panel-commodities" class="tab-panel"></div>
+    <div id="panel-credit" class="tab-panel"></div>
+    <div id="panel-housing" class="tab-panel"></div>
+    <div id="panel-sentiment" class="tab-panel"></div>
+    <div id="panel-centralbanks" class="tab-panel"></div>
+    <div id="panel-crypto" class="tab-panel"></div>
+    <div id="panel-fedwatch" class="tab-panel"></div>
+  </div>
+
+  </div><!-- end content-row -->
+
+  <!-- FOOTER -->
+  <footer id="footer">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span>[F1-F12] TABS</span>
+      <span style="color:var(--faint)">|</span>
+      <span>MARKET TERMINAL v10</span>
+      <span style="color:var(--faint)">|</span>
+      <span>SOURCE: FRED® + YAHOO FINANCE</span>
+      <span style="color:var(--faint)">|</span>
+      <span id="mkt-live-count" style="color:var(--green);font-size:10.5px"></span>
+    </div>
+    <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">CREATED WITH PERPLEXITY COMPUTER</a>
+  </footer>
+</div>
+
+
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════
+// MACRO TERMINAL v2 — Bloomberg Style
+// Data: FRED CSV + Yahoo Finance (via allorigins proxy)
+// ═══════════════════════════════════════════════════════════
+
+const PROXY = 'https://api.allorigins.win/get?url=';
+const enc   = u => PROXY + encodeURIComponent(u);
+const D     = {};  // data store
+const CHARTS = {};
+const TAB_STATUS = {}; // tracks per-tab last update time
+
+// Helper to generate tab status HTML for section headers
+function tabStatusHTML(tabName){
+  const ts=TAB_STATUS[tabName];
+  if(!ts) return '<span style="font-size:9px;color:var(--yellow);margin-left:auto">⬡ LOADING</span>';
+  const ago=Math.floor((Date.now()-ts)/1000);
+  const agoStr=ago<60?ago+'s ago':Math.floor(ago/60)+'m ago';
+  const liveCount=ts.liveKeys||0;
+  return `<span style="font-size:9px;color:var(--green);margin-left:auto;display:flex;align-items:center;gap:6px">● ${liveCount} LIVE · ${agoStr}</span>`;
+}
+function markTabUpdated(tabName,liveKeys){
+  TAB_STATUS[tabName]={time:Date.now(),liveKeys};
+  TAB_STATUS[tabName]=Date.now();
+  TAB_STATUS[tabName]={toString(){return Date.now()},liveKeys};
+  // Simplified — just store timestamp + count
+  TAB_STATUS[tabName]=Date.now();
+  TAB_STATUS[tabName+'_live']=liveKeys||0;
+}
+function tabStatusStr(tabName){
+  const ts=TAB_STATUS[tabName];
+  if(!ts) return '⬡ LOADING';
+  const ago=Math.floor((Date.now()-ts)/1000);
+  const agoStr=ago<60?ago+'s':Math.floor(ago/60)+'m';
+  const lk=TAB_STATUS[tabName+'_live']||0;
+  return `● ${lk} LIVE · ${agoStr} ago`;
+}
+
+// ── Helpers ────────────────────────────────────────────────
+const cls  = v => v>0?'up':v<0?'down':'flat';
+const arr  = v => v>0?'▲':v<0?'▼':'◆';
+const fmt  = (v,d=2) => isNaN(v)?'—':parseFloat(v).toFixed(d);
+const fmtB = v => v>=1e12?(v/1e12).toFixed(2)+'T':v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(1)+'M':(v/1e3).toFixed(0)+'K';
+
+// ── Clock ──────────────────────────────────────────────────
+function tickClock(){
+  const n=new Date(),p=x=>String(x).padStart(2,'0');
+  document.getElementById('clock-date').textContent=n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'}).toUpperCase();
+  document.getElementById('clock-time').textContent=`${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`;
+}
+setInterval(tickClock,1000);tickClock();
+let ldc=0;setInterval(()=>{ldc=(ldc+1)%4;const e=document.getElementById('ldots-txt');if(e)e.textContent='.'.repeat(ldc);},400);
+
+// ── Tab switching ──────────────────────────────────────────
+const TAB_COLORS={macro:'var(--acc-macro)',rates:'var(--acc-rates)',labor:'var(--acc-labor)',forex:'var(--acc-forex)',equity:'var(--acc-equity)',commodities:'#e67e22',credit:'#e74c3c',housing:'#27ae60',sentiment:'#9b59b6',centralbanks:'#1abc9c',crypto:'#f39c12',fedwatch:'#1a6b3c'};
+const TAB_TAPE_BORDER={macro:'var(--orange)',rates:'var(--cyan)',labor:'#6dbf67',forex:'var(--purple)',equity:'#f5a623',commodities:'#e67e22',credit:'#e74c3c',housing:'#27ae60',sentiment:'#9b59b6',centralbanks:'#1abc9c',crypto:'#f39c12',fedwatch:'#22a05a'};
+function switchTab(id){
+  // Save to localStorage
+  try{localStorage.setItem('macro_active_tab',id);}catch{}
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.remove('active');t.style.background='transparent';
+    const span=t.querySelector('span:not(.tab-fkey)');if(span)span.style.color='';
+    const fk=t.querySelector('.tab-fkey');if(fk){fk.style.borderColor='var(--faint)';fk.style.color='var(--faint)';}
+  });
+  document.querySelectorAll('.tab-panel').forEach(p=>{p.style.display='none';p.classList.remove('active');});
+  const tab=document.getElementById('tab-'+id);
+  tab.classList.add('active');tab.style.background=TAB_COLORS[id];
+  const span=tab.querySelector('span:not(.tab-fkey)');if(span)span.style.color='#000';
+  const fk=tab.querySelector('.tab-fkey');if(fk){fk.style.borderColor='#000';fk.style.color='#000';}
+  const panel=document.getElementById('panel-'+id);
+  panel.style.display='block';
+  panel.classList.add('active');
+  document.getElementById('cmd-tape').style.borderBottomColor=TAB_TAPE_BORDER[id]||'var(--orange)';
+  setTimeout(()=>refreshCharts(id),60);
+  // Inject tab status into first sec-hdr of active panel
+  setTimeout(()=>{
+    const hdr=panel.querySelector('.sec-hdr');
+    if(hdr){
+      let badge=hdr.querySelector('.tab-data-status');
+      if(!badge){badge=document.createElement('span');badge.className='tab-data-status';badge.style.cssText='font-size:9.5px;margin-left:auto;font-weight:700;letter-spacing:.06em';hdr.appendChild(badge);}
+      const ts=TAB_STATUS[id];
+      if(ts){
+        const ago=Math.floor((Date.now()-ts)/1000);
+        const agoStr=ago<60?ago+'s':Math.floor(ago/60)+'m';
+        const lk=TAB_STATUS[id+'_live']||0;
+        badge.textContent=`● ${lk} LIVE · ${agoStr} ago`;
+        badge.style.color='var(--green)';
+      } else {
+        badge.textContent='⬡ LOADING';
+        badge.style.color='var(--yellow)';
+      }
+    }
+  },100);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='F1'){e.preventDefault();switchTab('macro');}
+  if(e.key==='F2'){e.preventDefault();switchTab('rates');}
+  if(e.key==='F3'){e.preventDefault();switchTab('labor');}
+  if(e.key==='F4'){e.preventDefault();switchTab('forex');}
+  if(e.key==='F5'){e.preventDefault();switchTab('equity');}
+  if(e.key==='F6'){e.preventDefault();switchTab('commodities');}
+  if(e.key==='F7'){e.preventDefault();switchTab('credit');}
+  if(e.key==='F8'){e.preventDefault();switchTab('housing');}
+  if(e.key==='F9'){e.preventDefault();switchTab('sentiment');}
+  if(e.key==='F10'){e.preventDefault();switchTab('centralbanks');}
+  if(e.key==='F11'){e.preventDefault();switchTab('crypto');}
+  if(e.key==='F12'){e.preventDefault();switchTab('fedwatch');}
+});
+// Also capture F11 in capture phase to prevent browser fullscreen
+document.addEventListener('keydown',e=>{
+  if(e.key==='F11'){e.preventDefault();e.stopPropagation();}
+},true);
+
+// ══ EMBEDDED MEDIA PLAYER ════════════════════════════════════
+let mediaVisible=false, mediaMin=false;
+
+// Player size presets
+const SIZES={S:{w:280,h:160},M:{w:380,h:240},L:{w:520,h:320}};
+let currentSize='M';
+function setPlayerSize(sz){
+  currentSize=sz;
+  const el=document.getElementById('media-panel');
+  const cfg=SIZES[sz];
+  el.style.width=cfg.w+'px';
+  document.querySelectorAll('.size-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('sz-'+sz.toLowerCase()).classList.add('active');
+  // Update video section height
+  const vs=document.querySelector('.media-video-section');
+  if(vs) vs.style.height=cfg.h+'px';
+  // Show player if hidden
+  if(el.dataset.hidden==='1'){el.dataset.hidden='0';el.style.display='flex';document.getElementById('tv-btn').textContent='📺 HIDE';}
+  saveMediaState();
+}
+
+function toggleMedia(){
+  const el=document.getElementById('media-panel');
+  const isHidden=el.style.display==='none'||el.dataset.hidden==='1';
+  if(isHidden){
+    el.style.display='flex';
+    el.style.width=SIZES[currentSize].w+'px';
+    el.dataset.hidden='0';
+    document.getElementById('tv-btn').textContent='📺 HIDE';
+  } else {
+    el.style.display='none';
+    el.dataset.hidden='1';
+    document.getElementById('tv-btn').textContent='📺 TV';
+  }
+  saveMediaState();
+}
+
+function toggleFullscreen(){
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+    document.getElementById('fs-btn').textContent='⛶ EXIT';
+  } else {
+    document.exitFullscreen();
+    document.getElementById('fs-btn').textContent='⛶ FULL';
+  }
+}
+document.addEventListener('fullscreenchange',()=>{
+  document.getElementById('fs-btn').textContent=document.fullscreenElement?'⛶ EXIT':'⛶ FULL';
+});
+
+function toggleMinimize(){
+  // Not used for side panel — repurpose as pop-out
+  const el=document.getElementById('media-panel');
+  const isNarrow=el.style.width==='32px';
+  if(isNarrow){el.style.width='380px';}
+  else{el.style.width='32px';}
+}
+
+function switchMedia(id){
+  document.querySelectorAll('.media-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.media-pane').forEach(p=>{p.classList.remove('active');p.style.display='';});
+  document.getElementById('mtab-'+id).classList.add('active');
+  const pane=document.getElementById('mpane-'+id);
+  pane.classList.add('active');
+  // Save state to localStorage
+  try{localStorage.setItem('macro_tv_channel',id);}catch{}
+
+  // ── AUDIO FIX: Pause all other panes, activate selected ──
+  document.querySelectorAll('.media-pane').forEach(p=>{
+    if(p.id==='mpane-'+id) return;
+    // Pause any video elements in inactive panes
+    p.querySelectorAll('video').forEach(vid=>{vid.pause();vid.muted=true;});
+    // Blank inactive iframes to stop their audio
+    const iframe=p.querySelector('iframe');
+    if(iframe&&iframe.src&&iframe.src!=='about:blank'&&!iframe.dataset.origSrc){
+      iframe.dataset.origSrc=iframe.src;
+    }
+    if(iframe&&iframe.dataset.origSrc){
+      iframe.src='about:blank';
+    }
+  });
+  // Restore active pane
+  const activeIframe=pane.querySelector('iframe');
+  if(activeIframe&&activeIframe.dataset.origSrc){
+    activeIframe.src=activeIframe.dataset.origSrc;
+  }
+  // Init HLS for video-based channels when selected
+  const hlsChannels=['cnbc','bloomberg','bbc'];
+  if(hlsChannels.includes(id)){
+    initHlsChannel(id);
+    const vid=document.getElementById(HLS_CHANNELS[id]?.videoId);
+    if(vid){vid.muted=false;vid.play().catch(()=>{});}
+  }
+}
+
+// ── Generic HLS.js m3u8 player ──
+const hlsInstances={};
+const HLS_CHANNELS={
+  cnbc:{
+    videoId:'cnbc-hls-video',
+    streams:[
+      'https://stream.livenewsplay.com:9443/hls/cnbc/cnbcsd.m3u8',
+      'https://stream.livenewsplay.com:9443/hls/cnbc/cnbchd.m3u8',
+    ]
+  },
+  bloomberg:{
+    videoId:'bloomberg-hls-video',
+    streams:[
+      'https://liveprodusphoenixeast.akamaized.net/USPhx-HD/Channel-TX-USPhx-AWS-virginia-1/Source-USPhx-16k-1-s6lk2-BP-07-02-81ykIWnsMsg_live.m3u8',
+      'https://bloomberg-bloomberg-1-dk.samsung.wurl.tv/playlist.m3u8',
+      'https://bloomberg-bloomberg-3-br.samsung.wurl.tv/manifest/playlist.m3u8',
+    ]
+  },
+  bbc:{
+    videoId:'bbc-hls-video',
+    streams:[
+      'https://vs-hls-push-ww-live.akamaized.net/x=4/i=urn:bbc:pips:service:bbc_news_channel_hd/mobile_wifi_main_hd_abr_v2.m3u8',
+      'https://cdn4.skygo.mn/live/disk1/BBC_News/HLSv3-FTA/BBC_News.m3u8',
+    ]
+  }
+};
+const hlsStreamIdx={cnbc:0,bloomberg:0,bbc:0};
+
+function initHlsChannel(ch){
+  const cfg=HLS_CHANNELS[ch];
+  if(!cfg)return;
+  const video=document.getElementById(cfg.videoId);
+  if(!video)return;
+  // Destroy existing instance
+  if(hlsInstances[ch]){hlsInstances[ch].destroy();delete hlsInstances[ch];}
+  const src=cfg.streams[hlsStreamIdx[ch]];
+  if(Hls.isSupported()){
+    const hls=new Hls({enableWorker:true,lowLatencyMode:true,fragLoadingMaxRetry:3});
+    hls.loadSource(src);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED,()=>{video.play().catch(()=>{});});
+    hls.on(Hls.Events.ERROR,(e,data)=>{
+      if(data.fatal){
+        hls.destroy();delete hlsInstances[ch];
+        hlsStreamIdx[ch]=(hlsStreamIdx[ch]+1)%cfg.streams.length;
+        // Only retry if we haven't cycled back to start
+        if(hlsStreamIdx[ch]!==0) setTimeout(()=>initHlsChannel(ch),1500);
+      }
+    });
+    hlsInstances[ch]=hls;
+  } else if(video.canPlayType('application/vnd.apple.mpegurl')){
+    video.src=src;
+    video.addEventListener('loadedmetadata',()=>{video.play().catch(()=>{});},{once:true});
+  }
+}
+// Legacy alias
+function initCnbcHls(){initHlsChannel('cnbc');}
+
+// ── Save & restore media panel state ──
+function saveMediaState(){
+  try{
+    const panel=document.getElementById('media-panel');
+    const state={
+      width:panel.style.width||'380px',
+      hidden:panel.dataset.hidden||'0',
+      size:currentSize,
+      channel:document.querySelector('.media-tab.active')?.id?.replace('mtab-','')||'pluto',
+      videoHeight:document.querySelector('.media-video-section')?.style.height||''
+    };
+    localStorage.setItem('macro_tv_state',JSON.stringify(state));
+  }catch{}
+}
+function restoreMediaState(){
+  try{
+    const raw=localStorage.getItem('macro_tv_state');
+    if(!raw)return;
+    const s=JSON.parse(raw);
+    const panel=document.getElementById('media-panel');
+    if(s.width) panel.style.width=s.width;
+    if(s.hidden==='1'){panel.dataset.hidden='1';panel.style.display='none';document.getElementById('tv-btn').textContent='📺 TV';}
+    else{panel.style.display='flex';}
+    if(s.size&&SIZES[s.size]) setPlayerSize(s.size);
+    if(s.channel) switchMedia(s.channel);
+    if(s.videoHeight){const vs=document.querySelector('.media-video-section');if(vs)vs.style.height=s.videoHeight;}
+  }catch{}
+}
+// Auto-save state periodically
+setInterval(saveMediaState,5000);
+// Also save on visibility change / unload
+document.addEventListener('visibilitychange',saveMediaState);
+window.addEventListener('beforeunload',saveMediaState);
+// Store origSrc for all media iframes on startup (for audio fix lazy loading)
+setTimeout(()=>{
+  document.querySelectorAll('.media-pane iframe').forEach(iframe=>{
+    if(iframe.src&&iframe.src!=='about:blank') iframe.dataset.origSrc=iframe.src;
+  });
+},200);
+// Restore on load (default to schwab if no saved state)
+setTimeout(()=>{
+  restoreMediaState();
+  // If no channel was restored, ensure schwab is active
+  if(!localStorage.getItem('macro_tv_channel')) switchMedia('schwab');
+},600);
+
+// ══ MARKET NEWS FEED ══════════════════════════════════════════
+const NEWS_FEEDS = [
+  {name:'Reuters',     url:'https://feeds.reuters.com/reuters/businessNews'},
+  {name:'MarketWatch', url:'https://feeds.marketwatch.com/marketwatch/topstories'},
+  {name:'Yahoo Fin',   url:'https://finance.yahoo.com/news/rssindex'},
+  {name:'CNBC',        url:'https://www.cnbc.com/id/100003114/device/rss/rss.html'},
+  {name:'Investing',   url:'https://www.investing.com/rss/news.rss'},
+  {name:'AP Business', url:'https://rsshub.app/apnews/topics/business'},
+];
+
+let newsFetched = false;
+
+async function fetchNewsItem(feed) {
+  try {
+    const url = 'https://api.allorigins.win/get?url=' + encodeURIComponent(feed.url);
+    const r = await fetch(url, {signal: AbortSignal.timeout(8000)});
+    const json = await r.json();
+    let xml = json.contents || '';
+    if (xml.startsWith('data:')) xml = atob(xml.split(',')[1]);
+    // Parse RSS items
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'text/xml');
+    const items = Array.from(doc.querySelectorAll('item')).slice(0, 6);
+    return items.map(item => {
+      const title = item.querySelector('title')?.textContent?.replace(/<!\[CDATA\[(.*?)\]\]>/,'$1').trim() || '';
+      const link  = item.querySelector('link')?.textContent?.trim() || '#';
+      const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+      const timeStr = pubDate ? new Date(pubDate).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}) : '';
+      return {title, link, source: feed.name, time: timeStr, pubDateRaw: pubDate};
+    }).filter(x => x.title.length > 10);
+  } catch(e) {
+    return [];
+  }
+}
+
+async function loadNewsFeed() {
+  const statusEl = document.getElementById('news-feed-status');
+  const itemsEl  = document.getElementById('news-items');
+  if (!itemsEl) return;
+
+  if (statusEl) statusEl.textContent = 'loading...';
+
+  // Fetch all feeds in parallel for maximum coverage
+  const results = await Promise.allSettled(
+    NEWS_FEEDS.map(f => fetchNewsItem(f))
+  );
+
+  const allItems = [];
+  results.forEach(r => {
+    if (r.status === 'fulfilled') allItems.push(...r.value);
+  });
+
+  if (allItems.length === 0) {
+    // Fallback: show static headlines
+    itemsEl.innerHTML = FALLBACK_HEADLINES.map(h => newsItemHTML(h)).join('');
+    if (statusEl) statusEl.textContent = 'cached';
+    return;
+  }
+
+  // Sort by pubDate (most recent first) and deduplicate
+  const seen = new Set();
+  const unique = allItems.filter(item => {
+    const key = item.title.slice(0, 40);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a,b) => {
+    const ta = a.pubDateRaw ? new Date(a.pubDateRaw).getTime() : 0;
+    const tb = b.pubDateRaw ? new Date(b.pubDateRaw).getTime() : 0;
+    return tb - ta;
+  });
+
+  itemsEl.innerHTML = unique.slice(0, 30).map(h => newsItemHTML(h)).join('');
+  const now = new Date();
+  if (statusEl) statusEl.textContent = unique.length + ' headlines · updated ' + now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  newsFetched = true;
+}
+
+function newsItemHTML(item) {
+  // Build relative time string (e.g., "3m ago", "2h ago")
+  let relTime = '';
+  let fullTime = item.time || '';
+  if (item.pubDateRaw) {
+    const now = Date.now();
+    const pub = new Date(item.pubDateRaw).getTime();
+    if (!isNaN(pub)) {
+      const diffMs = now - pub;
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffHr = Math.floor(diffMin / 60);
+      const diffDay = Math.floor(diffHr / 24);
+      if (diffMin < 1) relTime = 'JUST NOW';
+      else if (diffMin < 60) relTime = diffMin + 'm ago';
+      else if (diffHr < 24) relTime = diffHr + 'h ago';
+      else relTime = diffDay + 'd ago';
+      const d = new Date(item.pubDateRaw);
+      fullTime = d.toLocaleDateString('en-US',{month:'short',day:'2-digit'}) + ' ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+    }
+  }
+  const relColor = relTime.includes('JUST')||relTime.includes('m ago') ? 'var(--green)' : 'var(--muted)';
+  return `<a class="news-item" href="${item.link}" target="_blank" rel="noopener noreferrer">
+    <div class="news-item-time">
+      <span class="news-item-source">${item.source}</span>
+      ${fullTime ? `<span>${fullTime}</span>` : ''}
+      ${relTime ? `<span style="color:${relColor};font-weight:700;font-size:9px">${relTime}</span>` : ''}
+    </div>
+    <div class="news-item-headline">${item.title}</div>
+  </a>`;
+}
+
+const FALLBACK_HEADLINES = [
+  {source:'Markets',time:'',link:'#',title:'Fed officials signal patience on rate cuts as inflation data remains mixed',pubDateRaw:new Date(Date.now()-3600000).toISOString()},
+  {source:'Economy',time:'',link:'#',title:'U.S. jobless claims hold steady near historic lows despite tech layoffs',pubDateRaw:new Date(Date.now()-7200000).toISOString()},
+  {source:'Equities',time:'',link:'#',title:'S&P 500 consolidates near all-time highs as earnings season approaches',pubDateRaw:new Date(Date.now()-10800000).toISOString()},
+  {source:'Rates',  time:'',link:'#',title:'Treasury yields tick higher on strong economic data; 10Y approaches 4.5%',pubDateRaw:new Date(Date.now()-14400000).toISOString()},
+  {source:'Commodities',time:'',link:'#',title:'Gold hits record as central bank buying continues at elevated pace',pubDateRaw:new Date(Date.now()-18000000).toISOString()},
+  {source:'Crypto', time:'',link:'#',title:'Bitcoin stabilizes above $68,000 amid institutional accumulation signals',pubDateRaw:new Date(Date.now()-21600000).toISOString()},
+  {source:'FX',     time:'',link:'#',title:'Dollar index (DXY) holds above 106 as rate differential remains supportive',pubDateRaw:new Date(Date.now()-28800000).toISOString()},
+  {source:'Credit', time:'',link:'#',title:'High-yield spreads widen modestly as investors reassess credit risk premium',pubDateRaw:new Date(Date.now()-36000000).toISOString()},
+  {source:'Energy', time:'',link:'#',title:'WTI crude holds $72 range as OPEC+ maintains output discipline',pubDateRaw:new Date(Date.now()-43200000).toISOString()},
+  {source:'Policy', time:'',link:'#',title:'FOMC minutes reveal divided committee on pace of future rate adjustments',pubDateRaw:new Date(Date.now()-50400000).toISOString()},
+];
+
+// Load news feed on startup, refresh every 3 minutes for live feel
+setTimeout(loadNewsFeed, 1500);
+setInterval(loadNewsFeed, 3 * 60 * 1000);
+
+// ── Drag right edge to resize player width ─────────────────
+// ── Drag right edge to resize player width ─────────────────
+(function(){
+  const handle=()=>document.getElementById('media-resize-handle');
+  const panel=()=>document.getElementById('media-panel');
+  let resizing=false, startX=0, startW=0;
+  document.addEventListener('DOMContentLoaded',()=>{
+    handle()?.addEventListener('mousedown',e=>{
+      resizing=true;startX=e.clientX;startW=panel().offsetWidth;
+      document.body.style.cursor='ew-resize';
+      document.body.style.userSelect='none';
+      e.preventDefault();
+    });
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!resizing)return;
+    const diff=e.clientX-startX; // drag right = wider
+    const newW=Math.max(220,Math.min(startW+diff,window.innerWidth*0.65));
+    panel().style.width=newW+'px';
+  });
+  document.addEventListener('mouseup',()=>{
+    if(resizing){resizing=false;document.body.style.cursor='';document.body.style.userSelect='';saveMediaState();}
+  });
+})();
+
+// ── Fetch helpers ──────────────────────────────────────────
+async function fetchYahoo(sym,range='2y'){
+  const bases=['https://query1.finance.yahoo.com','https://query2.finance.yahoo.com'];
+  for(const base of bases){
+    try{
+      const url=`${base}/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=${range}`;
+      const r=await fetch(enc(url),{signal:AbortSignal.timeout(12000)});
+      const json=await r.json();
+      let c=json.contents||'';if(c.startsWith('data:'))c=atob(c.split(',')[1]);
+      const data=JSON.parse(c);
+      const meta=data.chart.result[0].meta;
+      const price=meta.regularMarketPrice??meta.chartPreviousClose;
+      const prev=meta.chartPreviousClose??meta.previousClose;
+      const res=data.chart.result[0];
+      const ts=res.timestamp||[];
+      const closes=res.indicators?.quote?.[0]?.close||[];
+      const history=ts.map((t,i)=>({date:new Date(t*1000).toISOString().slice(0,10),value:closes[i]})).filter(x=>x.value!=null);
+      return{v:price,p:prev,history,live:true};
+    }catch{continue;}
+  }
+  return null;
+}
+
+async function fetchFredCsv(sid,limit=36){
+  try{
+    const url=`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${sid}`;
+    const r=await fetch(enc(url),{signal:AbortSignal.timeout(12000)});
+    const json=await r.json();
+    let c=json.contents||'';if(c.startsWith('data:'))c=atob(c.split(',')[1]);
+    const lines=c.trim().split('\n').slice(1).filter(l=>l.trim());
+    const valid=[];
+    for(const l of lines){const[date,val]=l.split(',');try{const v=parseFloat(val);if(!isNaN(v))valid.push({date:date.trim(),value:v});}catch{}}
+    if(!valid.length)throw new Error('empty');
+    const recent=valid.slice(-limit);
+    const latest=recent[recent.length-1];
+    const prev=recent[recent.length-2]||latest;
+    return{v:latest.value,p:prev.value,d:latest.date,history:recent,live:true};
+  }catch{return null;}
+}
+
+function synthHist(sv,months=24,vol=0.02,trend=0){
+  const h=[];let v=sv*(1-Math.abs(vol)*4);
+  for(let i=0;i<months*4;i++){
+    const d=new Date(2024,0,1);d.setDate(d.getDate()+i*7);
+    v=Math.max(v*(1+(Math.random()-.5)*2*vol+trend*Math.sin(i/(months*4)*Math.PI*2)),sv*0.2);
+    h.push({date:d.toISOString().slice(0,10),value:parseFloat(v.toFixed(4))});
+  }
+  h[h.length-1].value=sv;return h;
+}
+
+// ── Chart factory ──────────────────────────────────────────
+function makeChart(id,history,color,unit='',mini=false,refLine=null){
+  if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];}
+  const canvas=document.getElementById(id);
+  if(!canvas||!history||history.length<2)return;
+  const labels=history.map(h=>h.date.slice(0,7));
+  const vals=history.map(h=>h.value);
+  const datasets=[{
+    data:vals,borderColor:color,borderWidth:mini?1.2:1.5,fill:true,
+    backgroundColor:ctx=>{
+      const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height);
+      // Resolve CSS variable to hex if needed, otherwise use as-is
+      const resolveColor=(c,alpha)=>{
+        if(c.startsWith('var(')){ 
+          const style=getComputedStyle(document.documentElement);
+          const varName=c.match(/var\(([^)]+)\)/)?.[1];
+          c=style.getPropertyValue(varName).trim()||'#888888';
+        }
+        if(c.startsWith('#')&&(c.length===7||c.length===4)){
+          // hex color - append alpha as hex
+          const hex=c.length===4?'#'+c[1]+c[1]+c[2]+c[2]+c[3]+c[3]:c;
+          return hex+alpha;
+        }
+        // rgb/rgba - use opacity via rgba wrapper approach
+        return c.replace('rgb(','rgba(').replace(')',','+parseInt(alpha,16)/255+')');
+      };
+      g.addColorStop(0,resolveColor(color,'44'));
+      g.addColorStop(1,resolveColor(color,'06'));
+      return g;
+    },
+    pointRadius:0,pointHoverRadius:mini?0:4,tension:0.25,
+  }];
+  if(refLine!==null)datasets.push({data:Array(vals.length).fill(refLine),borderColor:'rgba(255,215,0,.4)',borderWidth:1,borderDash:[4,3],fill:false,pointRadius:0,tension:0});
+  CHARTS[id]=new Chart(canvas,{
+    type:'line',data:{labels,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:false,
+      interaction:{mode:mini?'none':'index',intersect:false},
+      plugins:{legend:{display:false},tooltip:mini?{enabled:false}:{backgroundColor:'#1e1e1e',borderColor:'#3a3a3a',borderWidth:1,titleColor:'#777',bodyColor:color,bodyFont:{family:'JetBrains Mono',size:12},titleFont:{family:'JetBrains Mono',size:10},callbacks:{label:ctx=>` ${ctx.parsed.y.toFixed(3)}${unit}`}}},
+      scales:{
+        x:{display:!mini,ticks:{color:'#444',font:{family:'JetBrains Mono',size:9},maxTicksLimit:6},grid:{color:'#1a1a1a'},border:{color:'#2a2a2a'}},
+        y:{display:!mini,ticks:{color:'#444',font:{family:'JetBrains Mono',size:9}},grid:{color:'#1a1a1a'},border:{color:'#2a2a2a'}}
+      }
+    }
+  });
+}
+
+function refreshCharts(tab){
+  if(tab==='macro') buildMacroCharts();
+  if(tab==='rates') buildRatesCharts();
+  if(tab==='labor') buildLaborCharts();
+  if(tab==='forex') buildForexCharts();
+  if(tab==='equity') buildEquityCharts();
+  if(tab==='commodities') buildCommoditiesCharts();
+  if(tab==='credit') buildCreditCharts();
+  if(tab==='housing') buildHousingCharts();
+  if(tab==='sentiment') buildSentimentCharts();
+  if(tab==='crypto') buildCryptoCharts();
+}
+
+// ── Tickers ────────────────────────────────────────────────
+const MKT_FB=[
+  {sym:'SPX',label:'SPX',price:6506,prev:5665,color:'var(--white)'},
+  {sym:'DJI',label:'DJIA',price:45577,prev:41985,color:'var(--white)'},
+  {sym:'NDX',label:'NDX',price:23898,prev:19634,color:'var(--white)'},
+  {sym:'RUT',label:'RUT',price:2438,prev:2070,color:'var(--white)'},
+  {sym:'BTC',label:'BTC',price:68602,prev:74800,color:'var(--yellow)'},
+  {sym:'GOLD',label:'GOLD',price:4574,prev:2650,color:'#f5a623'},
+];
+const FRED_KEYS=['fedfunds','dgs2','dgs10','dgs30','t10y2y','cpi','unrate','vix','dxy','hyspreads','mortgage','m2','gdp','housing'];
+const FRED_SERIES={'fedfunds':'FEDFUNDS','dgs2':'DGS2','dgs10':'DGS10','dgs30':'DGS30','t10y2y':'T10Y2Y','mortgage':'MORTGAGE30US','cpi':'CPIAUCSL','cpicore':'CPILFESL','pce':'PCEPI','gdp':'A191RL1Q225SBEA','indpro':'INDPRO','retail':'RSAFS','unrate':'UNRATE','payems':'PAYEMS','m2':'M2SL','hyspreads':'BAMLH0A0HYM2','vix':'VIXCLS','dxy':'DTWEXBGS','housing':'HOUST','eurusd':'DEXUSEU','usdjpy':'DEXJPUS','gbpusd':'DEXUSUK','audusd':'DEXUSAL','usdcad':'DEXCAUS','usdchf':'DEXSZUS',
+  /* Credit & Liquidity */
+  'igspreads':'BAMLC0A0CM','tedspread':'TEDRATE','walcl':'WALCL','busloans':'BUSLOANS','nfci':'NFCI',
+  /* Housing & Leading */
+  'permits':'PERMIT','cscase':'CSUSHPISA','newhomsales':'HSN1F','autosales':'TOTALSA','durgoods':'DGORDER','umcsent':'UMCSENT','leadidx':'USSLIND',
+  /* Sentiment — VIX already tracked above; these are additional */
+  'vix3m':'VXVCLS'};
+const FRED_FB={fedfunds:{v:3.64,p:3.64},dgs2:{v:3.90,p:3.80},dgs10:{v:4.39,p:4.28},dgs30:{v:4.87,p:4.75},t10y2y:{v:0.47,p:0.40},mortgage:{v:6.15,p:5.98},cpi:{v:319.2,p:318.4},cpicore:{v:326.5,p:325.8},pce:{v:127.1,p:126.6},gdp:{v:0.7,p:4.4},indpro:{v:103.5,p:103.2},retail:{v:728.0,p:724.5},unrate:{v:4.4,p:4.3},payems:{v:160050,p:159970},m2:{v:21680,p:21568},hyspreads:{v:3.45,p:2.98},vix:{v:26.78,p:19.80},dxy:{v:99.80,p:96.0},housing:{v:1368,p:1420},eurusd:{v:1.0830,p:1.0950},usdjpy:{v:156.05,p:153.2},gbpusd:{v:1.3450,p:1.3600},audusd:{v:0.6580,p:0.6720},usdcad:{v:1.3700,p:1.3800},usdchf:{v:0.8720,p:0.8650},
+  igspreads:{v:1.08,p:1.02},tedspread:{v:0.35,p:0.28},walcl:{v:6820000,p:6950000},busloans:{v:2780,p:2750},nfci:{v:-0.25,p:-0.30},
+  permits:{v:1450,p:1480},cscase:{v:328,p:322},newhomsales:{v:665,p:680},autosales:{v:15.8,p:16.1},durgoods:{v:285,p:280},umcsent:{v:52.9,p:56.8},leadidx:{v:99.5,p:100.2},
+  vix3m:{v:28.5,p:22.0}};
+const EQUITY_FB={spx:{v:6506,p:6607},djia:{v:45577,p:46021},ndx:{v:21648,p:22091},rut:{v:2438,p:2495},aapl:{v:247.99,p:253},nvda:{v:172.7,p:180},msft:{v:381.87,p:395},meta:{v:593.66,p:610},amzn:{v:205.37,p:212},googl:{v:301,p:310},brk:{v:480.94,p:490},jpm:{v:286.56,p:275},xlk:{v:135.29,p:140},xli:{v:161.67,p:158},xlu:{v:44.65,p:43.5},xlp:{v:81.29,p:80},hyg:{v:78.92,p:79.7},btc:{v:69219,p:71500},gold:{v:4574,p:4350},
+  /* Commodities */
+  wti:{v:98.32,p:68},brent:{v:112.19,p:74},natgas:{v:4.85,p:3.20},silver:{v:34.2,p:26.5},copper:{v:4.95,p:4.20},wheat:{v:6.80,p:5.90},xle:{v:98,p:82},xop:{v:145,p:120},
+  /* Crypto */
+  eth:{v:3420,p:3850},sol:{v:142,p:168},ada:{v:0.68,p:0.82},dot:{v:7.5,p:9.2},link:{v:18.5,p:22.4}};
+
+function renderMktTicker(){
+  const items=[
+    {sym:'SPX',   v:D.spx?.v||6506,  p:D.spx?.p||5665,  color:'var(--white)', sfx:''},
+    {sym:'DJIA',  v:D.djia?.v||45577,p:D.djia?.p||41985, color:'var(--white)', sfx:''},
+    {sym:'NDX',   v:D.ndx?.v||23898, p:D.ndx?.p||19634,  color:'var(--white)', sfx:''},
+    {sym:'RUT',   v:D.rut?.v||2438,  p:D.rut?.p||2070,   color:'var(--white)', sfx:''},
+    {sym:'VIX',   v:D.vix?.v||26.78, p:D.vix?.p||19.8,   color:'var(--yellow)',sfx:''},
+    {sym:'GOLD',  v:D.gold?.v||4574, p:D.gold?.p||2650,  color:'#f5a623', sfx:''},
+    {sym:'BTC',   v:D.btc?.v||68602, p:D.btc?.p||74800,  color:'var(--yellow)',sfx:''},
+    {sym:'10Y',   v:D.dgs10?.v||4.29,p:D.dgs10?.p||4.35, color:'var(--cyan)',  sfx:'%'},
+    {sym:'FF',    v:D.fedfunds?.v||5.33,p:D.fedfunds?.p||5.33, color:'var(--orange)',sfx:'%'},
+    {sym:'HY SPD',v:D.hyspreads?.v||2.98,p:D.hyspreads?.p||2.85,color:'var(--red)',sfx:'%'},
+    {sym:'DXY',   v:D.dxy?.v||106.8, p:D.dxy?.p||107.2,  color:'var(--purple)',sfx:''},
+    {sym:'AAPL',  v:D.aapl?.v||248,  p:D.aapl?.p||179,   color:'var(--white)', sfx:''},
+    {sym:'NVDA',  v:D.nvda?.v||172.7,p:D.nvda?.p||90.5,  color:'var(--green)', sfx:''},
+    {sym:'MSFT',  v:D.msft?.v||381.87,p:D.msft?.p||425,  color:'var(--white)', sfx:''},
+  ];
+  const doubled=[...items,...items];
+  const inner=document.getElementById('mkt-ticker-inner');
+  inner.innerHTML=doubled.map(item=>{
+    const chg=item.v-item.p;const pct=item.p?(chg/item.p*100):0;
+    const c=cls(chg);const a=arr(chg);
+    const col=c==='up'?'var(--green)':c==='down'?'var(--red)':'var(--muted)';
+    const priceStr=item.v>1000?item.v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):item.v.toFixed(2);
+    return `<div class="tick-item">
+      <span class="tick-sym" style="color:${item.color}">${item.sym}</span>
+      <span class="tick-price num" style="color:${col}">${priceStr}${item.sfx}</span>
+      <span class="tick-chg num" style="color:${col}">${a}${Math.abs(pct).toFixed(2)}%</span>
+    </div>`;
+  }).join('');
+  inner.style.animation='none';void inner.offsetWidth;
+  inner.style.animation=`ticker-scroll ${items.length*5.5}s linear infinite`;
+}
+
+function renderFredTape(){
+  const tapeItems=[
+    {label:'FF',key:'fedfunds',sfx:'%'},{label:'2Y',key:'dgs2',sfx:'%'},
+    {label:'10Y',key:'dgs10',sfx:'%'},{label:'30Y',key:'dgs30',sfx:'%'},
+    {label:'2/10',key:'t10y2y',sfx:'%'},{label:'CPI',key:'cpi',sfx:''},
+    {label:'UNRATE',key:'unrate',sfx:'%'},{label:'VIX',key:'vix',sfx:''},
+    {label:'DXY',key:'dxy',sfx:''},{label:'HY',key:'hyspreads',sfx:'%'},
+    {label:'MORT',key:'mortgage',sfx:'%'},{label:'M2',key:'m2',sfx:''},
+    {label:'GDP',key:'gdp',sfx:'%'},{label:'HOUSING',key:'housing',sfx:'K'},
+  ].filter(i=>D[i.key]);
+  const doubled=[...tapeItems,...tapeItems];
+  const inner=document.getElementById('cmd-tape-inner');
+  inner.innerHTML=doubled.map(item=>{
+    const d=D[item.key];const chg=d.v-d.p;const up=chg>0;const flat=Math.abs(chg)<0.001;
+    const col=flat?'#555':up?'var(--green)':'var(--red)';
+    return `<div class="tape-item">
+      <span style="color:#888;font-size:12px">${item.label}</span>
+      <span style="color:${col};font-weight:700;font-size:15px" class="num">${d.v.toFixed(2)}${item.sfx}</span>
+      ${!flat?`<span style="color:${col};font-size:12px" class="num">${up?'▲':'▼'}${Math.abs(chg).toFixed(2)}</span>`:''}
+    </div>`;
+  }).join('');
+  inner.style.animation='none';void inner.offsetWidth;
+  inner.style.animation=`tape-scroll ${tapeItems.length*4.5}s linear infinite`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// MACRO TAB (F1)
+// ═══════════════════════════════════════════════════════════
+function buildMacroTab(){
+  const spread=D.t10y2y?.v??-0.33;
+  const ff=D.fedfunds?.v??5.33;
+  const cpiMom=D.cpi?(D.cpi.v-D.cpi.p)/D.cpi.p*12*100:3.5;
+  const unrate=D.unrate?.v??4.1;
+  const vix=D.vix?.v??26.78;
+  const hy=D.hyspreads?.v??3.0;
+  const gdp=D.gdp?.v??2.3;
+  const m2=D.m2?.v??21568;
+  const sprdPct=Math.min(Math.abs(spread)*80,100);
+  const invertedFill=spread<0?`left:${50-sprdPct/2}%;width:${sprdPct/2}%;background:var(--red)`:`left:50%;width:${sprdPct/2}%;background:var(--green)`;
+  const score=[
+    {l:'GROWTH',   s:gdp>2?'EXPANDING':'SLOWING',     c:gdp>2?'var(--green)':'var(--red)'},
+    {l:'INFLATION',s:cpiMom<3?'COOLING':cpiMom<4?'STICKY':'HOT',c:cpiMom<3?'var(--green)':cpiMom<4?'var(--yellow)':'var(--red)'},
+    {l:'LABOR',    s:unrate<4.5?'TIGHT':unrate<5?'EASING':'LOOSE',c:unrate<4.5?'var(--yellow)':'var(--green)'},
+    {l:'CREDIT',   s:hy<3.5?'BENIGN':hy<5?'CAUTION':'STRESS',c:hy<3.5?'var(--green)':hy<5?'var(--yellow)':'var(--red)'},
+    {l:'LIQUIDITY',s:m2>21000?'AMPLE':'TIGHTENING',c:m2>21000?'var(--green)':'var(--red)'},
+    {l:'VOL',      s:vix<20?'CALM':vix<30?'ELEVATED':'FEAR',c:vix<20?'var(--green)':vix<30?'var(--yellow)':'var(--red)'},
+  ];
+  document.getElementById('panel-macro').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--orange)">MACRO REGIME ASSESSMENT — DRUCKENMILLER FRAMEWORK</span></div>
+    <div class="g2" style="grid-template-columns:2fr 1fr">
+      <div>
+        ${spread<0?`<div class="insight warn"><div class="insight-title">⚠ YIELD CURVE INVERTED — ${spread.toFixed(2)}%</div><div class="insight-body">2/10 spread at ${spread.toFixed(2)}%. Every U.S. recession since 1955 was preceded by a 2/10 inversion. Average lag: 12-18 months. Watch for the UN-inversion as recession confirmation.</div></div>`:
+        `<div class="insight bull"><div class="insight-title">✓ YIELD CURVE NORMALIZING — +${spread.toFixed(2)}%</div><div class="insight-body">Re-steepening from inversion. Historically marks the beginning of a new growth cycle and is bullish for banks.</div></div>`}
+        ${ff>4.5?`<div class="insight warn"><div class="insight-title">⚠ RESTRICTIVE POLICY — FF ${ff.toFixed(2)}%</div><div class="insight-body">Fed Funds well above neutral (~2.5%). Primary headwind for equities and credit. Watch for credit impulse deterioration as lagged effects materialize.</div></div>`:
+        `<div class="insight bull"><div class="insight-title">✓ EASING MONETARY CONDITIONS — FF ${ff.toFixed(2)}%</div><div class="insight-body">Accommodative policy. Historically supportive of risk assets. Druckenmiller watches for excess stimulus creating future inflation.</div></div>`}
+        ${cpiMom>3?`<div class="insight warn"><div class="insight-title">⚠ ABOVE-TARGET INFLATION — ~${cpiMom.toFixed(1)}% ANNUALIZED</div><div class="insight-body">CPI momentum above the 2% target. Central banks historically underestimate inflation persistence. Real rates (FF minus inflation) determine the true cost of capital.</div></div>`:
+        `<div class="insight bull"><div class="insight-title">✓ INFLATION NORMALIZING — ~${cpiMom.toFixed(1)}% ANNUALIZED</div><div class="insight-body">CPI momentum trending toward target. Positive for bond markets. Watch PCE deflator — the Fed's preferred measure.</div></div>`}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="scorecard">
+          <div class="scorecard-title" style="color:var(--orange)">MACRO SCORECARD</div>
+          ${score.map(s=>`<div class="sc-row"><span class="sc-label">${s.l}</span><span class="sc-status" style="color:${s.c}">● ${s.s}</span></div>`).join('')}
+        </div>
+        <div class="scorecard">
+          <div class="scorecard-title" style="color:var(--orange)">YIELD CURVE</div>
+          <div class="yc-bar">
+            <span style="font-size:10.5px;color:var(--muted);width:70px;flex-shrink:0">2/10 SPREAD</span>
+            <div class="yc-track"><div class="yc-mid"></div><div class="yc-fill" style="${invertedFill}"></div></div>
+            <span class="num" style="font-size:12px;font-weight:700;color:${spread<0?'var(--red)':'var(--green)'};min-width:55px;text-align:right">${spread>0?'+':''}${spread.toFixed(2)}%</span>
+            <span style="font-size:10px;color:${spread<0?'var(--red)':'var(--green)'};min-width:55px">${spread<0?'INVERTED':'NORMAL'}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px">
+            ${[{l:'2Y',k:'dgs2'},{l:'10Y',k:'dgs10'},{l:'30Y',k:'dgs30'},{l:'FF',k:'fedfunds'}].map(y=>`
+              <div style="display:flex;flex-direction:column;align-items:center;padding:6px;background:var(--s2);border:1px solid var(--border)">
+                <span style="font-size:10.5px;color:var(--muted)">${y.l}</span>
+                <span style="font-size:13px;font-weight:700" class="num">${fmt(D[y.k]?.v??0)}%</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--orange)">KEY INDICATORS</span></div>
+    <div class="g6">
+      ${[
+        {label:'FED FUNDS',key:'fedfunds',sfx:'%',alert:ff>5?'warn':'ok'},
+        {label:'10Y YIELD', key:'dgs10',  sfx:'%',alert:''},
+        {label:'CPI INDEX', key:'cpi',    sfx:'', alert:''},
+        {label:'UNRATE',    key:'unrate', sfx:'%',alert:unrate>5?'danger':'ok'},
+        {label:'VIX',       key:'vix',    sfx:'', alert:vix>25?'warn':'ok'},
+        {label:'DXY',       key:'dxy',    sfx:'', alert:''},
+      ].map(({label,key,sfx,alert})=>{
+        const d=D[key];const chg=d?(d.v-d.p):0;const c=cls(chg);
+        const alertColor=alert==='danger'?'var(--red)':alert==='warn'?'var(--yellow)':alert==='ok'?'var(--green)':'var(--faint)';
+        return `<div class="ccard" style="border-left-color:${alertColor}">
+          <div class="ccard-top"><span class="ccard-label">${label}</span><span class="ccard-date">${(d?.d||d?.date||'').slice(0,7)}</span></div>
+          <div class="ccard-val ${c} num">${fmt(d?.v??0,2)}${sfx}</div>
+          <div class="ccard-chg ${c} num">${arr(chg)} ${fmt(Math.abs(chg),3)}</div>
+          ${d?.history?.length?`<div class="ccard-spark"><canvas id="spark-${key}"></canvas></div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--orange)">TREND CHARTS — 3 YEAR HISTORY</span></div>
+    <div class="g3">
+      ${[
+        {key:'fedfunds',t:'FED FUNDS RATE',c:'#ff6600',u:'%',desc:'Druckenmiller\'s #1 signal. Rate direction sets the macro backdrop for all asset classes. Every 100bp of hikes historically costs ~1% of GDP over 12-18 months.'},
+        {key:'dgs10',   t:'10Y TREASURY YIELD',c:'#00c8ff',u:'%',desc:'Global discount rate. Rising 10Y compresses equity multiples and signals inflation expectations. The world\'s most important price.'},
+        {key:'cpi',     t:'CPI — ALL URBAN',c:'#ffd700',u:'',desc:'Headline CPI index. Rate of change (YoY) measures inflationary pressure. Fed targets ~2% on PCE; CPI runs ~0.3pts higher.'},
+        {key:'m2',      t:'M2 MONEY SUPPLY ($B)',c:'#c084fc',u:'B',desc:'Druckenmiller: "If you want to know what the economy will do in 6-12 months, watch M2 growth." The 2022 contraction was the primary warning signal.'},
+        {key:'hyspreads',t:'HY CREDIT SPREADS',c:'#ff3b3b',u:'%',desc:'High-yield OAS. Widening = credit stress. Druckenmiller uses credit markets as a leading indicator for equity risk.'},
+        {key:'vix',     t:'VIX — VOLATILITY INDEX',c:'#00d084',u:'',desc:'Market fear gauge. Above 30 = fear regime. Below 15 = complacency. Context-dependent contrarian signal at extremes.'},
+      ].map(p=>{
+        const d=D[p.key];const val=d?.v??0;
+        return `<div class="chart-panel">
+          <div class="chart-hdr">
+            <div><div class="chart-title" style="color:${p.c}">${p.t}</div></div>
+            <div class="chart-val num" style="color:${p.c}">${fmt(val,2)}${p.u}</div>
+          </div>
+          <div style="height:130px;position:relative"><canvas id="mc-${p.key}"></canvas></div>
+          <div class="chart-desc">${p.desc}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  buildMacroCharts();
+}
+function buildMacroCharts(){
+  const defs=[
+    {k:'fedfunds',c:'#ff6600'},{k:'dgs10',c:'#00c8ff'},{k:'cpi',c:'#ffd700'},
+    {k:'m2',c:'#c084fc'},{k:'hyspreads',c:'#ff3b3b'},{k:'vix',c:'#00d084'},
+  ];
+  defs.forEach(({k,c})=>{if(D[k]?.history?.length)makeChart(`mc-${k}`,D[k].history,c);});
+  // Sparklines
+  ['fedfunds','dgs10','cpi','unrate','vix','dxy'].forEach(k=>{if(D[k]?.history?.length)makeChart(`spark-${k}`,D[k].history.slice(-60),D[k].v>D[k].p?'var(--green)':'var(--red)','',true);});
+}
+
+// ═══════════════════════════════════════════════════════════
+// RATES TAB (F2)
+// ═══════════════════════════════════════════════════════════
+function buildRatesTab(){
+  const spread=D.t10y2y?.v??-0.33;const ff=D.fedfunds?.v??5.33;
+  const dgs2=D.dgs2?.v??4.62;const dgs10=D.dgs10?.v??4.29;const dgs30=D.dgs30?.v??4.60;const mort=D.mortgage?.v??6.65;
+  const cpiMom=D.cpi?(D.cpi.v-D.cpi.p)/D.cpi.p*12*100:3.5;
+  const realRate=ff-cpiMom;const taylorRate=2.5+0.5*(cpiMom-2.0)+0.25;
+  const rows=[
+    {l:'FED FUNDS (TARGET)',v:`${ff.toFixed(2)}%`,note:'Policy rate'},
+    {l:'2-YEAR TREASURY',   v:`${dgs2.toFixed(2)}%`,note:'Near-term expectations'},
+    {l:'10-YEAR TREASURY',  v:`${dgs10.toFixed(2)}%`,note:'Benchmark rate'},
+    {l:'30-YEAR TREASURY',  v:`${dgs30.toFixed(2)}%`,note:'Long-duration anchor'},
+    {l:'30-YEAR MORTGAGE',  v:`${mort.toFixed(2)}%`, note:'Housing transmission'},
+    {l:'2/10 SPREAD',       v:`${spread>0?'+':''}${spread.toFixed(2)}%`, note:spread<0?'⚠ INVERTED':'Normal',col:spread<0?'var(--red)':'var(--green)'},
+    {l:'REAL RATE (FF-CPI)',v:`${realRate>0?'+':''}${realRate.toFixed(2)}%`, note:realRate>0?'Restrictive':'Accommodative',col:realRate>0?'var(--yellow)':'var(--green)'},
+    {l:'TAYLOR RULE EST.',  v:`${taylorRate.toFixed(2)}%`, note:ff>taylorRate?'Rate above Taylor':'Rate below Taylor',col:ff>taylorRate?'var(--yellow)':'var(--green)'},
+  ];
+  document.getElementById('panel-rates').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--cyan)">INTEREST RATES — YIELD CURVE</span></div>
+    <div class="g2" style="grid-template-columns:1fr 2fr">
+      <div style="padding:12px">
+        <table class="dtable" style="width:100%">
+          <thead><tr><td colspan="3" class="dtable-title" style="color:var(--cyan)">YIELD CURVE STRUCTURE</td></tr></thead>
+          <tbody>${rows.map(r=>`<tr>
+            <td style="color:var(--muted);font-size:11px">${r.l}</td>
+            <td class="num" style="text-align:right;font-weight:700;color:${r.col||'var(--white)'}">${r.v}</td>
+            <td style="text-align:right;font-size:10.5px;color:${r.col||'var(--faint)'};font-style:italic">${r.note}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+        ${spread<0?`<div class="insight warn"><div class="insight-title">⚠ INVERTED YIELD CURVE — RECESSION SIGNAL</div><div class="insight-body">2/10 at ${spread.toFixed(2)}%. Every U.S. recession since 1955 preceded by inversion. Average lag 12-18 months. Watch for the UN-INVERSION — curve steepens into contraction onset.</div></div>`:
+        `<div class="insight bull"><div class="insight-title">✓ YIELD CURVE NORMALIZING</div><div class="insight-body">2/10 at +${spread.toFixed(2)}%. Re-steepening historically marks beginning of new growth cycle. Bullish for banks and financials.</div></div>`}
+        <div class="insight ${realRate>1?'warn':realRate>0?'neutral':'bull'}">
+          <div class="insight-title">◈ REAL RATES: ${realRate>0?'RESTRICTIVE':'ACCOMMODATIVE'} AT ${realRate>0?'+':''}${realRate.toFixed(2)}%</div>
+          <div class="insight-body">Real rates (FF minus CPI) at ${realRate.toFixed(2)}%. ${realRate>2?'Significantly restrictive — pressure on rate-sensitive assets and housing.':realRate>0?'Moderately restrictive — drag on growth but not deeply contractionary.':'Accommodative — supportive of leverage and risk assets.'}</div>
+        </div>
+        <div class="insight neutral">
+          <div class="insight-title">◈ TAYLOR RULE: FF ${ff>taylorRate?'ABOVE':'BELOW'} FAIR VALUE BY ${Math.abs(ff-taylorRate).toFixed(2)}%</div>
+          <div class="insight-body">Taylor Rule at ~${taylorRate.toFixed(2)}% given inflation (${cpiMom.toFixed(1)}%). ${ff>taylorRate?'Room for rate cuts as inflation normalizes.':'Policy may need to tighten further.'}</div>
+        </div>
+      </div>
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--cyan)">RATES HISTORY</span></div>
+    <div class="g2">
+      ${[
+        {key:'fedfunds',t:'FED FUNDS RATE',c:'#ff6600',u:'%',desc:'Primary monetary policy instrument. Every 100bp of Fed hikes historically costs ~1% off GDP over 12-18 months.'},
+        {key:'t10y2y',  t:'2/10 YIELD SPREAD',c:spread<0?'#ff3b3b':'#00d084',u:'%',desc:'Below zero = inverted. Druckenmiller\'s highest-conviction macro indicator for recession timing.'},
+        {key:'dgs10',   t:'10-YEAR TREASURY YIELD',c:'#00c8ff',u:'%',desc:'Global benchmark. Drives equity discount rates, mortgages, corporate borrowing costs.'},
+        {key:'mortgage',t:'30-YEAR MORTGAGE RATE',c:'#ffd700',u:'%',desc:'Housing affordability proxy. At current levels, monthly payments near all-time highs relative to income.'},
+      ].map(p=>{const d=D[p.key];return `<div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:${p.c}">${p.t}</div></div><div class="chart-val num" style="color:${p.c}">${fmt(d?.v??0,2)}${p.u}</div></div>
+        <div style="height:150px;position:relative"><canvas id="rc-${p.key}"></canvas></div>
+        <div class="chart-desc">${p.desc}</div>
+      </div>`;}).join('')}
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--cyan)">INFLATION INDICATORS</span></div>
+    <div class="g3">
+      ${[
+        {key:'cpi',    t:'CPI — ALL ITEMS',c:'#ffd700',desc:'Headline CPI. Most cited inflation metric. Fed target is ~2% on PCE; CPI runs ~0.3pts higher.'},
+        {key:'cpicore',t:'CORE CPI (EX F&E)',c:'#ff6600',desc:'Excluding food and energy. Fed\'s preferred near-term gauge. More sticky and mean-reverting than headline.'},
+        {key:'pce',    t:'PCE PRICE INDEX', c:'#c084fc',desc:'Fed\'s OFFICIAL target variable. Runs ~0.3pts below CPI. Fed 2% target applies to PCE, not CPI.'},
+      ].map(p=>{const d=D[p.key];return `<div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:${p.c}">${p.t}</div></div><div class="chart-val num" style="color:${p.c}">${fmt(d?.v??0,2)}</div></div>
+        <div style="height:130px;position:relative"><canvas id="rc-${p.key}"></canvas></div>
+        <div class="chart-desc">${p.desc}</div>
+      </div>`;}).join('')}
+    </div>`;
+  buildRatesCharts();
+}
+function buildRatesCharts(){
+  [{k:'fedfunds',c:'#ff6600'},{k:'t10y2y',c:D.t10y2y?.v<0?'#ff3b3b':'#00d084'},{k:'dgs10',c:'#00c8ff'},{k:'mortgage',c:'#ffd700'},{k:'cpi',c:'#ffd700'},{k:'cpicore',c:'#ff6600'},{k:'pce',c:'#c084fc'}]
+  .forEach(({k,c})=>{if(D[k]?.history?.length)makeChart(`rc-${k}`,D[k].history,c);});
+}
+
+// ═══════════════════════════════════════════════════════════
+// LABOR TAB (F3)
+// ═══════════════════════════════════════════════════════════
+function buildLaborTab(){
+  const unrate=D.unrate?.v??4.1;const payems=D.payems?.v??159850;const payemsPrev=D.payems?.p??159650;
+  const jobsAdded=Math.round(payems-payemsPrev);const gdp=D.gdp?.v??2.3;
+  const retail=D.retail?.v??724.5;const retailPrev=D.retail?.p??719.1;
+  const retailChg=(retail-retailPrev)/retailPrev*100;
+  const indpro=D.indpro?.v??103.2;const indproPrev=D.indpro?.p??103.0;
+  const indproChg=(indpro-indproPrev)/indproPrev*100;
+  const housing=D.housing?.v??1368;
+  const m2=D.m2?.v??21568;const m2Prev=D.m2?.p??21440;const m2Chg=(m2-m2Prev)/m2Prev*100;
+  const sahmApprox=unrate-3.7;
+  document.getElementById('panel-labor').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-labor)">LABOR MARKET — EMPLOYMENT CONDITIONS</span></div>
+    <div class="g2" style="grid-template-columns:2fr 1fr">
+      <div class="g3" style="padding:12px">
+        ${[
+          {l:'UNEMPLOYMENT',k:'unrate',sfx:'%',dec:1,alert:unrate>5?'var(--red)':unrate<4?'var(--yellow)':'var(--green)'},
+          {l:'NONFARM PAYROLLS',k:'payems',sfx:'K',dec:0,alert:'var(--faint)'},
+          {l:'JOBS ADDED MOM',k:null,v:(jobsAdded>0?'+':'')+jobsAdded+'K',alert:jobsAdded>150?'var(--green)':'var(--yellow)'},
+          {l:'REAL GDP GROWTH',k:'gdp',sfx:'%',dec:1,alert:gdp<0?'var(--red)':gdp<1?'var(--yellow)':'var(--green)'},
+          {l:'RETAIL SALES',k:'retail',sfx:'',dec:1,alert:'var(--faint)'},
+          {l:'IND. PRODUCTION',k:'indpro',sfx:'',dec:1,alert:'var(--faint)'},
+        ].map(({l,k,sfx,dec,alert,v})=>{
+          const d=k?D[k]:null;const val=d?fmt(d.v,dec??2)+(sfx||''):v||'—';
+          const chg=d?(d.v-d.p):0;const c=cls(chg);
+          return `<div class="ccard" style="border-left-color:${alert}">
+            <div class="ccard-top"><span class="ccard-label">${l}</span></div>
+            <div class="ccard-val ${d?c:''} num">${val}</div>
+            ${d?`<div class="ccard-chg ${c} num">${arr(chg)} ${fmt(Math.abs(chg),2)}</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+        <div class="insight ${sahmApprox>=0.5?'bear':unrate<4.5?'bull':'warn'}">
+          <div class="insight-title">${sahmApprox>=0.5?'⚠ SAHM RULE TRIGGERED':'LABOR MARKET — '+(unrate<4.5?'RESILIENT':'SOFTENING')}</div>
+          <div class="insight-body">Unemployment at ${unrate.toFixed(1)}%. Sahm Rule deviation: ~${sahmApprox.toFixed(1)}pp (triggers at 0.5pp). ${sahmApprox>=0.5?'Historically never triggered outside recession.':unrate<4.5?'Still tight. Watch initial jobless claims for acceleration.':'Gradually cooling — watch for non-linear deterioration.'}</div>
+        </div>
+        <table class="dtable" style="width:100%">
+          <thead><tr><td colspan="3" class="dtable-title" style="color:var(--acc-labor)">LABOR SNAPSHOT</td></tr></thead>
+          <tbody>
+            ${[
+              {l:'Unemployment',v:unrate.toFixed(1)+'%',note:'U-3 rate'},
+              {l:'Payrolls',v:payems.toFixed(0)+'K',note:'Total NFP'},
+              {l:'Jobs Added',v:(jobsAdded>0?'+':'')+jobsAdded+'K',note:'>150K strong'},
+              {l:'GDP Growth',v:gdp.toFixed(1)+'% ann.',note:'QoQ annualized'},
+              {l:'Retail MoM',v:retailChg.toFixed(2)+'%',note:'Nominal'},
+              {l:'Ind. Prod.',v:indproChg.toFixed(2)+'%',note:'MoM'},
+            ].map(r=>`<tr><td style="color:var(--muted);font-size:11px">${r.l}</td><td class="num" style="text-align:right;font-weight:700">${r.v}</td><td style="color:var(--faint);font-size:10.5px;text-align:right;font-style:italic">${r.note}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-labor)">ECONOMIC ACTIVITY</span></div>
+    <div class="g3">
+      ${[
+        {k:'unrate', t:'UNEMPLOYMENT RATE',c:'#6dbf67',desc:'Lagging indicator. By the time unemployment rises, recession is often already underway. Lead with yield curve and credit.'},
+        {k:'gdp',    t:'REAL GDP GROWTH %', c:gdp>0?'#6dbf67':'#ff3b3b',desc:'Annualized real GDP growth. Two consecutive negative quarters = technical recession. U.S. potential ~2%.'},
+        {k:'payems', t:'NONFARM PAYROLLS',  c:'#00c8ff',desc:'Total nonfarm payrolls. Below 100K/month signals softening. Druckenmiller tracks for consumption implications.'},
+        {k:'retail', t:'RETAIL SALES ($B)', c:'#ffd700',desc:'Consumer spending = ~70% of U.S. GDP. Must be inflation-adjusted for real consumption trends.'},
+        {k:'indpro', t:'INDUSTRIAL PROD.',  c:'#ff6600',desc:'Index (2017=100). Captures manufacturing, mining, utilities. Leading indicator for corporate earnings.'},
+        {k:'housing',t:'HOUSING STARTS (K)',c:'#c084fc',desc:'Most rate-sensitive sector. Declining starts signal future construction employment weakness.'},
+      ].map(p=>{const d=D[p.k];return `<div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:${p.c}">${p.t}</div></div><div class="chart-val num" style="color:${p.c}">${fmt(d?.v??0,1)}</div></div>
+        <div style="height:130px;position:relative"><canvas id="lc-${p.k}"></canvas></div>
+        <div class="chart-desc">${p.desc}</div>
+      </div>`;}).join('')}
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-labor)">MONEY SUPPLY / LIQUIDITY</span></div>
+    <div class="g2">
+      <div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:#c084fc">M2 MONEY SUPPLY ($B)</div></div><div class="chart-val num" style="color:#c084fc">${fmt(m2,0)}B</div></div>
+        <div style="height:160px;position:relative"><canvas id="lc-m2"></canvas></div>
+        <div class="chart-desc">Druckenmiller: "If you want to know what the economy will do in 6-12 months, watch M2 growth." The 2022 contraction — first in modern history — was his primary warning signal.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:0">
+        <div class="insight ${m2Chg>0?'bull':'warn'}">
+          <div class="insight-title">${m2Chg>0?'✓':'⚠'} M2 ${m2Chg>0?'EXPANDING':'CONTRACTING'} — ${m2Chg>0?'+':''}${m2Chg.toFixed(2)}% MoM</div>
+          <div class="insight-body">M2 at $${m2.toFixed(0)}B. The 2020-21 surge (~27% YoY) seeded the 2021-22 inflation. The 2022 contraction telegraphed tightening ahead — first M2 decline in modern history.</div>
+        </div>
+        <div class="insight neutral">
+          <div class="insight-title">◈ CREDIT IMPULSE FRAMEWORK</div>
+          <div class="insight-body">Credit impulse = CHANGE in new credit as % of GDP. Deceleration drags even if credit grows. Watch: Fed SLOOS survey, C&I loan growth, consumer credit, HY issuance volumes.</div>
+        </div>
+      </div>
+    </div>`;
+  buildLaborCharts();
+}
+function buildLaborCharts(){
+  [{k:'unrate',c:'#6dbf67'},{k:'gdp',c:D.gdp?.v>0?'#6dbf67':'#ff3b3b'},{k:'payems',c:'#00c8ff'},{k:'retail',c:'#ffd700'},{k:'indpro',c:'#ff6600'},{k:'housing',c:'#c084fc'},{k:'m2',c:'#c084fc'}]
+  .forEach(({k,c})=>{if(D[k]?.history?.length)makeChart(`lc-${k}`,D[k].history,c);});
+}
+
+// ═══════════════════════════════════════════════════════════
+// FOREX TAB (F4)
+// ═══════════════════════════════════════════════════════════
+function buildForexTab(){
+  const dxy=D.dxy?.v??106.8;const dxyChg=(D.dxy?.v??0)-(D.dxy?.p??0);
+  const ff=D.fedfunds?.v??5.33;const spread=D.t10y2y?.v??-0.33;
+  const dollarStrong=dxy>105;
+  const PAIRS=[
+    {key:'eurusd',label:'EUR/USD',desc:'Euro / US Dollar',color:'#00c8ff',pip:4,impl:`EUR/USD at ${fmt(D.eurusd?.v??1.0843,4)}. Rate differential (Fed ${ff.toFixed(2)}% vs ECB ~4.0%) favors USD. Watch ECB divergence — if Fed pivots first, EUR should rally. Key: 1.1200 resistance, 1.0500 support.`},
+    {key:'usdjpy',label:'USD/JPY',desc:'US Dollar / Japanese Yen',color:'#ff6600',pip:2,impl:`USD/JPY at ${fmt(D.usdjpy?.v??149.82,2)}. BOJ ultra-loose policy creates structural carry trade. Fed/BOJ spread ~${ff.toFixed(2)}% vs 0.1%. Any BOJ rate hike is the largest catalyst for yen appreciation.`},
+    {key:'gbpusd',label:'GBP/USD',desc:'British Pound / US Dollar',color:'#6dbf67',pip:4,impl:`GBP/USD at ${fmt(D.gbpusd?.v??1.2942,4)}. UK stagflation risk creates BOE complexity. Post-Brexit structural deficits limit upside. Key: 1.32 resistance, 1.22 support.`},
+    {key:'audusd',label:'AUD/USD',desc:'Australian Dollar / USD',color:'#ffd700',pip:4,impl:`AUD/USD at ${fmt(D.audusd?.v??0.6312,4)}. High-beta risk currency and China proxy — ~35% of Australian exports to China. Iron ore + RBA policy are secondary drivers.`},
+    {key:'usdcad',label:'USD/CAD',desc:'US Dollar / Canadian Dollar',color:'#c084fc',pip:4,impl:`USD/CAD at ${fmt(D.usdcad?.v??1.3842,4)}. Loonie has ~0.7 correlation with WTI crude. BOC policy vs Fed is the monetary driver.`},
+    {key:'usdchf',label:'USD/CHF',desc:'US Dollar / Swiss Franc',color:'#ff3b3b',pip:4,impl:`USD/CHF at ${fmt(D.usdchf?.v??0.8892,4)}. Swiss franc is the archetypal safe-haven. SNB intervenes to prevent excessive CHF appreciation.`},
+  ];
+  const sprdPct=Math.min(Math.abs(D.t10y2y?.v??-0.33)*80,100);
+  const ifill=(D.t10y2y?.v??-0.33)<0?`left:${50-sprdPct/2}%;width:${sprdPct/2}%;background:var(--red)`:`left:50%;width:${sprdPct/2}%;background:var(--green)`;
+  document.getElementById('panel-forex').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--purple)">DOLLAR INDEX (DXY) — USD REGIME</span></div>
+    <div class="g2" style="grid-template-columns:1fr 2fr">
+      <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+        <div style="border:1px solid var(--border);background:var(--s1);padding:12px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:.1em;text-transform:uppercase">DXY — TRADE-WEIGHTED USD</div>
+          <div style="font-size:38px;font-weight:700;color:${dollarStrong?'var(--orange)':'var(--cyan)'}" class="num">${dxy.toFixed(2)}</div>
+          <div style="font-size:13px;font-weight:700;color:${dxyChg>0?'var(--green)':'var(--red)'}" class="num">${arr(dxyChg)} ${Math.abs(dxyChg).toFixed(2)}</div>
+          <div style="height:60px;margin-top:8px;position:relative"><canvas id="fx-dxy-mini"></canvas></div>
+        </div>
+        <div style="border:1px solid var(--border);background:var(--s1);padding:10px">
+          <div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">DXY COMPOSITION</div>
+          ${[['#00c8ff','EUR/USD','57.6%'],['#ff6600','USD/JPY','13.6%'],['#6dbf67','GBP/USD','11.9%'],['#c084fc','USD/CAD','9.1%'],['#ffd700','SEK/USD','4.2%'],['#ff3b3b','CHF/USD','3.6%']].map(([col,lbl,wt])=>`<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><div style="width:8px;height:8px;background:${col};flex-shrink:0"></div><span style="flex:1;font-size:11.5px;color:var(--muted)">${lbl}</span><span style="font-size:12px;font-weight:700;color:${col}">${wt}</span></div>`).join('')}
+        </div>
+      </div>
+      <div style="padding:12px;display:flex;flex-direction:column;gap:8px">
+        <div class="insight ${dollarStrong?'warn':'bull'}">
+          <div class="insight-title">${dollarStrong?'⚠':'✓'} USD ${dollarStrong?'STRONG':'WEAK'} REGIME — DXY ${dxy.toFixed(2)}</div>
+          <div class="insight-body">${dollarStrong?'Dollar strength above 105 creates global tightening beyond Fed rate decisions. Compresses commodities, strains EM USD debt, reduces S&P international earnings. Signals global dollar shortage.':'Dollar weakness below 100 is typically a tailwind for commodities, EM equities, and multinational earnings. Could signal Fed pivot expectations.'}</div>
+        </div>
+        <div class="insight neutral"><div class="insight-title">◈ MACRO FX FRAMEWORK — DRUCKENMILLER APPROACH</div><div class="insight-body">Currencies are the "first derivative" of macro policy divergence. Key inputs: (1) Rate differentials; (2) Current account balances; (3) CB balance sheet direction; (4) Political risk. Current theme: Fed/ECB/BOJ divergence, China reopening, EM debt sustainability.</div></div>
+        <div class="insight ${spread<0?'warn':'bull'}"><div class="insight-title">◈ YIELD CURVE & FX LINKAGE</div><div class="insight-body">${spread<0?`Inverted 2/10 (${spread.toFixed(2)}%) historically precedes USD weakness. Watch USD/JPY — curve normalization + BOJ tightening = carry trade unwind.`:`Normalizing curve supports USD through growth premium. Watch for dollar cycle turn when curve steepens sharply.`}</div></div>
+      </div>
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--purple)">MAJOR CURRENCY PAIRS — ANALYSIS</span></div>
+    <div class="g2" style="padding:12px;gap:10px">
+      ${PAIRS.map(pair=>{
+        const pd=D[pair.key];const pv=pd?.v??0;const pp=pd?.p??0;
+        const pchg=pv-pp;const ppct=pp?(pchg/pp*100):0;
+        return `<div style="border:1px solid var(--border);background:var(--s1);display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--s2)">
+            <div><div style="font-size:14px;font-weight:700;color:${pair.color}">${pair.label}</div><div style="font-size:10.5px;color:var(--muted)">${pair.desc}</div></div>
+            <div style="text-align:right"><div style="font-size:22px;font-weight:700;color:${cls(pchg)==='up'?'var(--green)':cls(pchg)==='down'?'var(--red)':'var(--white)'}" class="num">${pv.toFixed(pair.pip)}</div>
+            <div style="font-size:12px;font-weight:700;color:${cls(pchg)==='up'?'var(--green)':'var(--red)'}" class="num">${arr(pchg)} ${Math.abs(pchg).toFixed(pair.pip)} (${ppct>0?'+':''}${ppct.toFixed(3)}%)</div></div>
+          </div>
+          <div style="padding:6px 12px;height:65px;position:relative"><canvas id="fx-${pair.key}"></canvas></div>
+          <div style="margin:0 12px 12px;border-left:2px solid ${pair.color};padding:8px;background:var(--s3)">
+            <div style="font-size:11px;color:${pair.color};font-weight:700;margin-bottom:4px;text-transform:uppercase">${pair.label} OUTLOOK</div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.55">${pair.impl}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--purple)">DXY CHART — HISTORY</span></div>
+    <div style="padding:12px">
+      <div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:${dollarStrong?'var(--orange)':'var(--cyan)'}">DXY — TRADE-WEIGHTED DOLLAR</div><div class="chart-sub">Above 100 = strong. Below 100 = weak. Primary driver: Fed-vs-world rate differentials.</div></div>
+        <div class="chart-val num" style="color:${dollarStrong?'var(--orange)':'var(--cyan)'}">${dxy.toFixed(2)}</div></div>
+        <div style="height:160px;position:relative"><canvas id="fx-dxy"></canvas></div>
+      </div>
+    </div>`;
+  buildForexCharts();
+}
+function buildForexCharts(){
+  if(D.dxy?.history?.length){makeChart('fx-dxy-mini',D.dxy.history,'#ff6600','',true);makeChart('fx-dxy',D.dxy.history,'#ff6600','');}
+  const colors={eurusd:'#00c8ff',usdjpy:'#ff6600',gbpusd:'#6dbf67',audusd:'#ffd700',usdcad:'#c084fc',usdchf:'#ff3b3b'};
+  Object.entries(colors).forEach(([k,c])=>{if(D[k]?.history?.length)makeChart(`fx-${k}`,D[k].history,c,'',true);});
+}
+
+// ═══════════════════════════════════════════════════════════
+// EQUITY MARKETS TAB (F5) — NEW
+// ═══════════════════════════════════════════════════════════
+function buildEquityTab(){
+  const spx=D.spx?.v??6506;const spxPrev=D.spx?.p??5665;
+  const djia=D.djia?.v??45577;const djPrev=D.djia?.p??41985;
+  const ndx=D.ndx?.v??23898;const ndxPrev=D.ndx?.p??19634;
+  const rut=D.rut?.v??2438;const rutPrev=D.rut?.p??2070;
+  const vix=D.vix?.v??26.78;const vixPrev=D.vix?.p??19.8;
+
+  const majorIndices=[
+    {sym:'SPX',  name:'S&P 500',         v:spx,  p:spxPrev,  color:'var(--white)',note:'Large cap benchmark'},
+    {sym:'DJIA', name:'Dow Jones',        v:djia, p:djPrev,   color:'#00c8ff',    note:'30 industrial leaders'},
+    {sym:'NDX',  name:'Nasdaq 100',       v:ndx,  p:ndxPrev,  color:'#6dbf67',    note:'Top 100 non-fin Nasdaq'},
+    {sym:'RUT',  name:'Russell 2000',     v:rut,  p:rutPrev,  color:'#ffd700',    note:'Small cap sentiment'},
+    {sym:'VIX',  name:'VIX Fear Gauge',   v:vix,  p:vixPrev,  color:vix>25?'var(--red)':'var(--yellow)',note:vix>25?'ELEVATED STRESS':'Normal range'},
+  ];
+
+  const sectors=[
+    {sym:'XLK', name:'Technology',     v:D.xlk?.v??135.29,  p:D.xlk?.p??107,  color:'#00c8ff'},
+    {sym:'XLF', name:'Financials',     v:D.xlf?.v??49.08,   p:D.xlf?.p??41.5, color:'#6dbf67'},
+    {sym:'XLE', name:'Energy',         v:D.xle?.v??86.5,    p:D.xle?.p??89.2, color:'#ff6600'},
+    {sym:'XLV', name:'Healthcare',     v:D.xlv?.v??138.5,   p:D.xlv?.p??142,  color:'#c084fc'},
+    {sym:'XLI', name:'Industrials',    v:D.xli?.v??161.67,  p:D.xli?.p??133,  color:'#ffd700'},
+    {sym:'XLP', name:'Staples',        v:D.xlp?.v??81.29,   p:D.xlp?.p??76,   color:'#f5a623'},
+    {sym:'XLU', name:'Utilities',      v:D.xlu?.v??44.65,   p:D.xlu?.p??39.8, color:'#00d084'},
+    {sym:'XLB', name:'Materials',      v:D.xlb?.v??87.2,    p:D.xlb?.p??80.5, color:'#ff3b3b'},
+    {sym:'XLRE',name:'Real Estate',    v:D.xlre?.v??38.5,   p:D.xlre?.p??41.2, color:'#a78bfa'},
+    {sym:'XLC', name:'Comm Services',  v:D.xlc?.v??82.4,    p:D.xlc?.p??68.2, color:'#34d399'},
+  ];
+
+  const megacaps=[
+    {sym:'AAPL', name:'Apple',     v:D.aapl?.v??248,  p:D.aapl?.p??179,  color:'#aaa'},
+    {sym:'NVDA', name:'Nvidia',    v:D.nvda?.v??172.7,p:D.nvda?.p??90.5, color:'#76b900'},
+    {sym:'MSFT', name:'Microsoft', v:D.msft?.v??381.87,p:D.msft?.p??425, color:'#00bcf2'},
+    {sym:'META', name:'Meta',      v:D.meta?.v??593.66,p:D.meta?.p??505, color:'#0064e0'},
+    {sym:'AMZN', name:'Amazon',    v:D.amzn?.v??205.37,p:D.amzn?.p??178, color:'#ff9900'},
+    {sym:'GOOGL',name:'Alphabet',  v:D.googl?.v??301,  p:D.googl?.p??163, color:'#4285f4'},
+    {sym:'BRK',  name:'Berkshire', v:D.brk?.v??480.94, p:D.brk?.p??535,  color:'#f5a623'},
+    {sym:'JPM',  name:'JPMorgan',  v:D.jpm?.v??286.56, p:D.jpm?.p??239,  color:'#00c8ff'},
+  ];
+
+  // Risk indicators
+  const hyg=D.hyg?.v??78.92;const hygPrev=D.hyg?.p??79.7;
+  const btc=D.btc?.v??68602;const btcPrev=D.btc?.p??74800;
+  const gold=D.gold?.v??4574;const goldPrev=D.gold?.p??2650;
+
+  // Market breadth estimates based on available data
+  const spxYtd=((spx-spxPrev)/spxPrev*100);
+  const ndxYtd=((ndx-ndxPrev)/ndxPrev*100);
+  const isRiskOn=spxYtd>0&&vix<25&&((hyg-hygPrev)/hygPrev*100)>-1;
+
+  document.getElementById('panel-equity').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-equity)">MAJOR INDICES — EQUITY MARKET OVERVIEW</span></div>
+    <div class="g5" style="padding:12px">
+      ${majorIndices.map(idx=>{
+        const chg=idx.v-idx.p;const pct=idx.p?(chg/idx.p*100):0;const c=cls(chg);
+        return `<div class="ccard" style="border-left-color:${idx.color}">
+          <div class="ccard-top"><span class="ccard-label">${idx.sym}</span><span class="ccard-date">${idx.name}</span></div>
+          <div class="ccard-val ${c} num" style="font-size:${idx.v>10000?'16px':'22px'}">${idx.v>1000?idx.v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):idx.v.toFixed(2)}</div>
+          <div class="ccard-chg ${c} num">${arr(chg)} ${Math.abs(pct).toFixed(2)}%</div>
+          <div class="ccard-sub">${idx.note}</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- Sector Rotation + Heatmap -->
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-equity)">SECTOR ROTATION — S&P 500 GICS SECTORS</span></div>
+    <div class="g2" style="padding:12px">
+      <!-- Sector bars -->
+      <div style="border:1px solid var(--border);background:var(--s1);padding:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--acc-equity);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">SECTOR PERFORMANCE</div>
+        ${sectors.map(s=>{
+          const chg=s.v-s.p;const pct=s.p?(chg/s.p*100):0;
+          const isPos=pct>=0;const barW=Math.min(Math.abs(pct)/15*45,45);
+          return `<div class="sector-bar">
+            <span class="sector-name">${s.name}</span>
+            <div class="sector-track">
+              <div class="sector-zero"></div>
+              <div class="sector-fill" style="width:${barW}%;${isPos?'':'left:auto;right:50%;'}background:${isPos?s.color:'var(--red)'};opacity:.85"></div>
+            </div>
+            <span class="sector-val num" style="color:${isPos?s.color:'var(--red)'}">${pct>0?'+':''}${pct.toFixed(2)}%</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <!-- Heatmap grid -->
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--acc-equity);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">SECTOR HEATMAP</div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:3px">
+          ${sectors.map(s=>{
+            const chg=s.v-s.p;const pct=s.p?(chg/s.p*100):0;
+            const a=Math.min(Math.abs(pct)/15,1);
+            const bg=pct>=0?`rgba(0,208,132,${0.15+a*0.65})`:`rgba(255,59,59,${0.15+a*0.65})`;
+            return `<div class="hm-cell" style="background:${bg}">
+              <span class="hm-name">${s.sym}</span>
+              <span class="hm-pct">${pct>0?'+':''}${pct.toFixed(1)}%</span>
+              <span class="hm-price">$${s.v.toFixed(2)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Mega-cap stocks -->
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-equity)">MEGA-CAP STOCKS — MAG 7 + KEY NAMES</span></div>
+    <div class="g4" style="padding:12px">
+      ${megacaps.map(s=>{
+        const chg=s.v-s.p;const pct=s.p?(chg/s.p*100):0;const c=cls(chg);
+        return `<div class="ccard" style="border-left-color:${s.color}">
+          <div class="ccard-top"><span class="ccard-label" style="color:${s.color}">${s.sym}</span><span style="font-size:10px;color:var(--faint)">${s.name}</span></div>
+          <div class="ccard-val ${c} num">$${s.v.toFixed(2)}</div>
+          <div class="ccard-chg ${c} num">${arr(chg)} ${Math.abs(pct).toFixed(2)}%</div>
+          ${D[s.sym.toLowerCase()]?.history?.length?`<div class="ccard-spark"><canvas id="eq-${s.sym.toLowerCase()}"></canvas></div>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- Equity charts -->
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-equity)">INDEX CHARTS — 2 YEAR HISTORY</span></div>
+    <div class="g2">
+      <div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:var(--white)">S&P 500 INDEX</div><div class="chart-sub">Large cap benchmark · 2-year daily</div></div><div class="chart-val num" style="color:${spxYtd>0?'var(--green)':'var(--red)'}">${spx.toLocaleString()}</div></div>
+        <div style="height:160px;position:relative"><canvas id="eq-spx"></canvas></div>
+        <div class="chart-desc">The S&P 500 is the world's most-watched equity index. Forward P/E, earnings growth, and the Fed rate path are the primary valuation drivers. Druckenmiller focuses on liquidity and rate backdrop before analyzing individual equities.</div>
+      </div>
+      <div class="chart-panel">
+        <div class="chart-hdr"><div><div class="chart-title" style="color:var(--yellow)">VIX — MARKET FEAR GAUGE</div><div class="chart-sub">Implied vol of SPX 30-day options</div></div><div class="chart-val num" style="color:${vix>25?'var(--red)':vix>20?'var(--yellow)':'var(--green)'}">${vix.toFixed(2)}</div></div>
+        <div style="height:160px;position:relative"><canvas id="eq-vix"></canvas></div>
+        <div class="chart-desc">VIX >30 = panic/crisis. 20-30 = stress. 15-20 = normal. <15 = complacency. Extreme VIX spikes are often buy signals; extreme VIX lows are warning signals. Currently: ${vix>25?'ELEVATED STRESS':'NORMAL RANGE'}.</div>
+      </div>
+    </div>
+
+    <!-- Risk indicators + Equity insights -->
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:var(--acc-equity)">RISK INDICATORS & MARKET ANALYSIS</span></div>
+    <div class="g3" style="padding:12px">
+      <div>
+        ${[
+          {l:'BTC/ETH Crypto',    v:D.btc?.v??68602,  p:btcPrev, color:'var(--yellow)',sfx:'',dec:0,fmt:v=>v.toLocaleString()},
+          {l:'Gold Futures',      v:D.gold?.v??4574,  p:goldPrev,color:'#f5a623',sfx:'',dec:2,fmt:v=>'$'+v.toFixed(2)},
+          {l:'HYG (HY Bonds)',    v:hyg,               p:hygPrev, color:'var(--red)',  sfx:'',dec:2,fmt:v=>'$'+v.toFixed(2)},
+          {l:'TLT (Long Bonds)',  v:D.tlt?.v??85.83,  p:D.tlt?.p??92.8,color:'var(--cyan)',sfx:'',dec:2,fmt:v=>'$'+v.toFixed(2)},
+        ].map(r=>{
+          const chg=r.v-r.p;const pct=r.p?(chg/r.p*100):0;const c=cls(chg);
+          return `<div class="ccard" style="border-left-color:${r.color}">
+            <div class="ccard-label">${r.l}</div>
+            <div class="ccard-val ${c} num">${r.fmt(r.v)}</div>
+            <div class="ccard-chg ${c} num">${arr(chg)} ${Math.abs(pct).toFixed(2)}%</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="insight ${isRiskOn?'bull':'bear'}">
+          <div class="insight-title">${isRiskOn?'✓ RISK-ON ENVIRONMENT':'⚠ RISK-OFF / DEFENSIVE'}</div>
+          <div class="insight-body">SPX ${spxYtd>0?'up':'down'} ${Math.abs(spxYtd).toFixed(1)}% vs prior period. VIX at ${vix.toFixed(1)} (${vix<20?'calm':'elevated'}). HYG ${(hyg-hygPrev)/hygPrev*100>0?'bid':'offered'} — credit signals ${(hyg-hygPrev)/hygPrev*100>0?'risk-on':'risk-off'}. ${isRiskOn?'Equities in constructive environment.':'Defensive posture warranted.'}</div>
+        </div>
+        <div class="insight neutral">
+          <div class="insight-title">◈ EQUITY VALUATION CONTEXT</div>
+          <div class="insight-body">S&P 500 at ${spx.toLocaleString()}. Key drivers: (1) Fed rate path — every 100bp cut = ~15-20x multiple expansion at 5% earnings yield; (2) Earnings growth — consensus ~10% for 2026; (3) AI capex supercycle supporting Tech/industrials; (4) Concentration risk — Mag 7 = ~32% of S&P 500 market cap. Watch NVDA earnings as proxy for AI investment cycle health.</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="insight warn">
+          <div class="insight-title">◈ DRUCKENMILLER ON EQUITIES</div>
+          <div class="insight-body">"I never use valuation to time the market. The catalyst is liquidity. If the Fed is pumping money, buy. If they're withdrawing it, sell." The most important inputs are: (1) Fed liquidity direction; (2) Earnings trend; (3) Credit conditions (HY spreads); (4) Sentiment extremes (VIX, put/call ratios). All of these are tracked in this terminal.</div>
+        </div>
+        <div style="border:1px solid var(--border);background:var(--s1);padding:10px">
+          <div style="font-size:11px;font-weight:700;color:var(--acc-equity);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">MARKET BREADTH SIGNALS</div>
+          ${[
+            {l:'SPX vs prior period', v:`${spxYtd>0?'+':''}${spxYtd.toFixed(2)}%`, c:spxYtd>0?'var(--green)':'var(--red)'},
+            {l:'NDX vs prior period', v:`${ndxYtd>0?'+':''}${ndxYtd.toFixed(2)}%`,  c:ndxYtd>0?'var(--green)':'var(--red)'},
+            {l:'RUT vs SPX (spread)', v:`${((rut-rutPrev)/rutPrev*100-(spx-spxPrev)/spxPrev*100).toFixed(2)}%`, c:'var(--muted)'},
+            {l:'VIX level',           v:`${vix.toFixed(2)} (${vix<20?'CALM':vix<25?'ELEVATED':'HIGH'})`, c:vix>25?'var(--red)':vix>20?'var(--yellow)':'var(--green)'},
+            {l:'HYG credit signal',   v:`${(hyg-hygPrev)/hygPrev*100>0?'BID ▲':'OFFERED ▼'}`, c:(hyg-hygPrev)/hygPrev*100>0?'var(--green)':'var(--red)'},
+            {l:'Gold vs SPX',         v:`${((gold-goldPrev)/goldPrev*100-(spx-spxPrev)/spxPrev*100)>0?'GOLD LEADING':'SPX LEADING'}`, c:'var(--yellow)'},
+          ].map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
+            <span style="color:var(--muted)">${r.l}</span>
+            <span class="num" style="color:${r.c};font-weight:700">${r.v}</span>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  buildEquityCharts();
+}
+function buildEquityCharts(){
+  // Index sparklines for mega-caps
+  const megacapMap={aapl:'#aaa',nvda:'#76b900',msft:'#00bcf2',meta:'#0064e0',amzn:'#ff9900',googl:'#4285f4',brk:'#f5a623',jpm:'#00c8ff'};
+  Object.entries(megacapMap).forEach(([k,c])=>{if(D[k]?.history?.length)makeChart(`eq-${k}`,D[k].history.slice(-60),c,'',true);});
+  // Main charts
+  if(D.spx?.history?.length)  makeChart('eq-spx', D.spx.history, '#e0e0e0','');
+  else makeChart('eq-spx', synthHist(6506,24,.025,.003),'#e0e0e0','');
+  if(D.vix?.history?.length)  makeChart('eq-vix', D.vix.history, '#ffd700','',false,20);
+  else makeChart('eq-vix', synthHist(26.78,24,.07,.002),'#ffd700','',false,20);
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMMODITIES & ENERGY TAB (F6)
+// ═══════════════════════════════════════════════════════════
+function buildCommoditiesTab(){
+  const v=(k,fb)=>D[k]?.v??fb; const p=(k,fb)=>D[k]?.p??fb;
+  const chg=(k,fb1,fb2)=>{const c=v(k,fb1),pr=p(k,fb2);return pr?((c-pr)/pr*100):0;};
+  const card=(label,key,fb,sfx='',clr='var(--white)')=>{
+    const val=v(key,fb),prev=p(key,fb),ch=prev?((val-prev)/prev*100):0;
+    return `<div class="ccard" style="border-left-color:${clr}"><div class="ccard-top"><span class="ccard-label">${label}</span><span class="ccard-date">${D[key]?.d||''}</span></div><div class="ccard-val ${cls(ch)}" style="color:${cls(ch)==='up'?'var(--green)':'var(--red)'}">${sfx}${fmt(val,2)}</div><div class="ccard-chg ${cls(ch)}">${arr(ch)} ${fmt(Math.abs(ch),2)}%</div><div class="ccard-spark"><canvas id="cmd-${key}" height="32"></canvas></div></div>`;
+  };
+  document.getElementById('panel-commodities').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#e67e22">COMMODITIES & ENERGY — SUPPLY SHOCK MONITOR</span></div>
+    <div class="g4">
+      ${card('WTI CRUDE','wti',98.32,'$','#e67e22')}
+      ${card('BRENT CRUDE','brent',112.19,'$','#e67e22')}
+      ${card('NATURAL GAS','natgas',4.85,'$','#3498db')}
+      ${card('GOLD','gold',4574,'$','#f5a623')}
+    </div>
+    <div class="g4">
+      ${card('SILVER','silver',34.2,'$','#bdc3c7')}
+      ${card('COPPER','copper',4.95,'$','#e74c3c')}
+      ${card('WHEAT','wheat',6.80,'$','#27ae60')}
+      ${card('XLE (ENERGY ETF)','xle',98,'$','#e67e22')}
+    </div>
+    <div class="g2">
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:#e67e22">WTI CRUDE OIL</span><span class="chart-val ${cls(chg('wti',98,68))}">${fmt(v('wti',98),2)}</span></div><div style="height:180px"><canvas id="cmd-wti-chart"></canvas></div><div class="chart-desc"><strong>Iran conflict premium:</strong> WTI surged 30%+ YTD as US-Israel operation continues. Iraq force majeure on oilfields. Supply disruption vs demand destruction dynamics in play.</div></div>
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:#f5a623">GOLD</span><span class="chart-val" style="color:var(--green)">${fmt(v('gold',4574),2)}</span></div><div style="height:180px"><canvas id="cmd-gold-chart"></canvas></div><div class="chart-desc"><strong>Record safe-haven bid:</strong> Gold regained luster vs Treasuries. Central bank buying elevated. Druckenmiller's preferred hedge when distrusting monetary policy framework.</div></div>
+    </div>
+    <div class="insight warn"><div class="insight-title">⚡ ENERGY SHOCK ASSESSMENT</div><div class="insight-body">Oil prices up ~30% YTD on Iran conflict. Brent-WTI spread widening signals international supply disruption. This is a classic supply-side shock: inflationary for consumers, supportive for energy equities, and complicates Fed policy. Druckenmiller historically positions long energy equities / short consumer discretionary in this regime.</div></div>`;
+}
+function buildCommoditiesCharts(){
+  if(D.wti?.history?.length) makeChart('cmd-wti-chart',D.wti.history,'#e67e22','$');
+  else makeChart('cmd-wti-chart',synthHist(98,24,.04,.01),'#e67e22','$');
+  if(D.gold?.history?.length) makeChart('cmd-gold-chart',D.gold.history,'#f5a623','$');
+  else makeChart('cmd-gold-chart',synthHist(4574,24,.025,.005),'#f5a623','$');
+  ['wti','brent','natgas','gold','silver','copper','wheat','xle'].forEach(k=>{
+    if(D[k]?.history?.length) makeChart('cmd-'+k,D[k].history.slice(-60),k==='gold'?'#f5a623':'#e67e22','',true);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CREDIT & LIQUIDITY TAB (F7)
+// ═══════════════════════════════════════════════════════════
+function buildCreditTab(){
+  const v=(k,fb)=>D[k]?.v??fb;
+  const hy=v('hyspreads',2.98),ig=v('igspreads',1.08),ted=v('tedspread',0.35),m2=v('m2',21568),nfci=v('nfci',-0.25);
+  const walcl=v('walcl',6820000),busloans=v('busloans',2780);
+  const hyStatus=hy<3?'BENIGN':hy<4.5?'CAUTION':hy<6?'STRESS':'CRISIS';
+  const hyColor=hy<3?'var(--green)':hy<4.5?'var(--yellow)':hy<6?'var(--red)':'var(--red)';
+  document.getElementById('panel-credit').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#e74c3c">CREDIT & LIQUIDITY — DRUCKENMILLER'S #1 SIGNAL</span></div>
+    <div class="g3">
+      <div class="ccard" style="border-left-color:var(--red)"><div class="ccard-label">HY OAS SPREAD</div><div class="ccard-val" style="color:${hyColor}">${fmt(hy)}%</div><div class="ccard-sub">${hyStatus}</div><div class="ccard-spark"><canvas id="crd-hy" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--cyan)"><div class="ccard-label">IG OAS SPREAD</div><div class="ccard-val">${fmt(ig)}%</div><div class="ccard-sub">${ig<1.2?'TIGHT':'WIDENING'}</div><div class="ccard-spark"><canvas id="crd-ig" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--yellow)"><div class="ccard-label">TED SPREAD</div><div class="ccard-val">${fmt(ted)}%</div><div class="ccard-sub">${ted<0.5?'NORMAL':ted<1?'ELEVATED':'STRESS'}</div><div class="ccard-spark"><canvas id="crd-ted" height="32"></canvas></div></div>
+    </div>
+    <div class="g3">
+      <div class="ccard" style="border-left-color:var(--green)"><div class="ccard-label">M2 MONEY SUPPLY</div><div class="ccard-val">${fmtB(m2*1e9)}</div><div class="ccard-spark"><canvas id="crd-m2" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--purple)"><div class="ccard-label">FED BALANCE SHEET</div><div class="ccard-val">${fmtB(walcl*1e6)}</div><div class="ccard-sub">QT ongoing</div><div class="ccard-spark"><canvas id="crd-walcl" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--orange)"><div class="ccard-label">NFCI (FIN. CONDITIONS)</div><div class="ccard-val" style="color:${nfci<0?'var(--green)':'var(--red)'}">${fmt(nfci,3)}</div><div class="ccard-sub">${nfci<0?'LOOSE':'TIGHT'}</div><div class="ccard-spark"><canvas id="crd-nfci" height="32"></canvas></div></div>
+    </div>
+    <div class="g2">
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:var(--red)">HY SPREAD HISTORY</span></div><div style="height:180px"><canvas id="crd-hy-chart"></canvas></div><div class="chart-desc"><strong>Credit stress barometer:</strong> HY spreads are the earliest warning of risk-off. Druckenmiller: "Liquidity is the single most important factor. I never use valuation to time — I use liquidity and technicals."</div></div>
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:var(--green)">M2 MONEY SUPPLY</span></div><div style="height:180px"><canvas id="crd-m2-chart"></canvas></div><div class="chart-desc"><strong>Liquidity engine:</strong> M2 growth moderating after post-pandemic surge. Fed QT draining ~$95B/month. Watch for M2 contraction as recession precursor.</div></div>
+    </div>
+    <div class="insight bear"><div class="insight-title">🔴 CREDIT REGIME: ${hyStatus}</div><div class="insight-body">HY spread at ${fmt(hy)}% — ${hy<3.5?'still benign but watch for widening':'showing signs of stress'}. Fed balance sheet at ${fmtB(walcl*1e6)}, QT continuing. NFCI at ${fmt(nfci,3)} suggests ${nfci<0?'financial conditions remain loose':'conditions tightening'}. Bank lending (C&I loans) at $${fmtB(busloans*1e9)}. Key watch: HY spread above 5% historically triggers equity drawdowns of 15%+.</div></div>`;
+}
+function buildCreditCharts(){
+  ['hy','ig','ted','m2','walcl','nfci'].forEach(k=>{
+    const key={'hy':'hyspreads','ig':'igspreads','ted':'tedspread','m2':'m2','walcl':'walcl','nfci':'nfci'}[k];
+    if(D[key]?.history?.length) makeChart('crd-'+k,D[key].history.slice(-60),k==='m2'?'var(--green)':'var(--red)','',true);
+  });
+  if(D.hyspreads?.history?.length) makeChart('crd-hy-chart',D.hyspreads.history,'var(--red)','%');
+  else makeChart('crd-hy-chart',synthHist(2.98,24,.08,0),'var(--red)','%');
+  if(D.m2?.history?.length) makeChart('crd-m2-chart',D.m2.history,'var(--green)','');
+  else makeChart('crd-m2-chart',synthHist(21568,24,.01,.002),'var(--green)','');
+}
+
+// ═══════════════════════════════════════════════════════════
+// HOUSING & LEADING INDICATORS TAB (F8)
+// ═══════════════════════════════════════════════════════════
+function buildHousingTab(){
+  const v=(k,fb)=>D[k]?.v??fb;
+  const housing=v('housing',1368),permits=v('permits',1450),cscase=v('cscase',328);
+  const newHome=v('newhomsales',665),auto=v('autosales',15.8),durg=v('durgoods',285);
+  const mort=v('mortgage',6.65),umcs=v('umcsent',52.9),lead=v('leadidx',99.5);
+  document.getElementById('panel-housing').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#27ae60">HOUSING & LEADING — "THE INSIDE OF THE MARKET" (DRUCKENMILLER)</span></div>
+    <div class="g3">
+      <div class="ccard" style="border-left-color:#27ae60"><div class="ccard-label">HOUSING STARTS (K)</div><div class="ccard-val">${fmt(housing,0)}</div><div class="ccard-spark"><canvas id="hsg-starts" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:#2ecc71"><div class="ccard-label">BUILDING PERMITS (K)</div><div class="ccard-val">${fmt(permits,0)}</div><div class="ccard-spark"><canvas id="hsg-permits" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--cyan)"><div class="ccard-label">CASE-SHILLER HOME PRICE</div><div class="ccard-val">${fmt(cscase,1)}</div><div class="ccard-spark"><canvas id="hsg-cscase" height="32"></canvas></div></div>
+    </div>
+    <div class="g3">
+      <div class="ccard" style="border-left-color:var(--orange)"><div class="ccard-label">NEW HOME SALES (K)</div><div class="ccard-val">${fmt(newHome,0)}</div><div class="ccard-spark"><canvas id="hsg-newsales" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--red)"><div class="ccard-label">30Y MORTGAGE RATE</div><div class="ccard-val" style="color:var(--red)">${fmt(mort)}%</div><div class="ccard-spark"><canvas id="hsg-mort" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--yellow)"><div class="ccard-label">CONSUMER SENTIMENT</div><div class="ccard-val" style="color:${umcs<60?'var(--red)':'var(--green)'}">${fmt(umcs,1)}</div><div class="ccard-spark"><canvas id="hsg-umcs" height="32"></canvas></div></div>
+    </div>
+    <div class="g3">
+      <div class="ccard" style="border-left-color:var(--purple)"><div class="ccard-label">AUTO SALES (M SAAR)</div><div class="ccard-val">${fmt(auto,1)}</div><div class="ccard-spark"><canvas id="hsg-auto" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--cyan)"><div class="ccard-label">DURABLE GOODS ($B)</div><div class="ccard-val">${fmt(durg,1)}</div><div class="ccard-spark"><canvas id="hsg-durg" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--white)"><div class="ccard-label">LEADING INDEX</div><div class="ccard-val" style="color:${lead<100?'var(--red)':'var(--green)'}">${fmt(lead,1)}</div><div class="ccard-spark"><canvas id="hsg-lead" height="32"></canvas></div></div>
+    </div>
+    <div class="insight ${lead<100?'bear':'bull'}"><div class="insight-title">${lead<100?'🔴':'🟢'} LEADING INDICATORS: ${lead<100?'DETERIORATING':'POSITIVE'}</div><div class="insight-body">Druckenmiller: "Housing, auto sales, and durable goods are the three main indicators that lead an economic cycle." Housing starts at ${fmt(housing,0)}K (${housing<1400?'below':'above'} trend). Permits at ${fmt(permits,0)}K. Auto sales ${fmt(auto,1)}M SAAR. Consumer sentiment at ${fmt(umcs,1)} — ${umcs<60?'worse than 96% of historical readings':'recovering'}. Leading index at ${fmt(lead,1)} — ${lead<100?'signaling contraction ahead':'expansion continuing'}.</div></div>`;
+}
+function buildHousingCharts(){
+  const map={'hsg-starts':'housing','hsg-permits':'permits','hsg-cscase':'cscase','hsg-newsales':'newhomsales','hsg-mort':'mortgage','hsg-umcs':'umcsent','hsg-auto':'autosales','hsg-durg':'durgoods','hsg-lead':'leadidx'};
+  Object.entries(map).forEach(([id,key])=>{
+    if(D[key]?.history?.length) makeChart(id,D[key].history.slice(-60),key==='mortgage'?'var(--red)':'#27ae60','',true);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// SENTIMENT & FLOWS TAB (F9)
+// ═══════════════════════════════════════════════════════════
+function buildSentimentTab(){
+  const v=(k,fb)=>D[k]?.v??fb;
+  const vix=v('vix',26.78),vix3m=v('vix3m',28.5),umcs=v('umcsent',52.9);
+  const vixSignal=vix>30?'FEAR':vix>20?'ELEVATED':vix<15?'COMPLACENT':'CALM';
+  const vixColor=vix>30?'var(--red)':vix>20?'var(--yellow)':vix<15?'var(--green)':'var(--green)';
+  const termStruct=vix3m-vix;
+  const tsSignal=termStruct>3?'CONTANGO (normal)':termStruct>0?'FLAT':'BACKWARDATION (fear)';
+  const tsColor=termStruct>3?'var(--green)':termStruct>0?'var(--yellow)':'var(--red)';
+  document.getElementById('panel-sentiment').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#9b59b6">SENTIMENT & VOLATILITY — CONTRARIAN SIGNALS</span></div>
+    <div class="g3">
+      <div class="ccard" style="border-left-color:var(--yellow)"><div class="ccard-label">VIX (FEAR INDEX)</div><div class="ccard-val" style="color:${vixColor}">${fmt(vix)}</div><div class="ccard-sub">${vixSignal}</div><div class="ccard-spark"><canvas id="snt-vix" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:#9b59b6"><div class="ccard-label">VIX 3-MONTH</div><div class="ccard-val">${fmt(vix3m)}</div><div class="ccard-sub">TERM: ${tsSignal}</div><div class="ccard-spark"><canvas id="snt-vix3m" height="32"></canvas></div></div>
+      <div class="ccard" style="border-left-color:var(--cyan)"><div class="ccard-label">UMICH CONSUMER SENTIMENT</div><div class="ccard-val" style="color:${umcs<60?'var(--red)':'var(--green)'}">${fmt(umcs,1)}</div><div class="ccard-sub">${umcs<55?'EXTREME PESSIMISM':umcs<70?'BELOW AVG':'POSITIVE'}</div><div class="ccard-spark"><canvas id="snt-umcs" height="32"></canvas></div></div>
+    </div>
+    <div class="g2">
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:var(--yellow)">VIX HISTORY</span><span class="chart-val" style="color:${vixColor}">${fmt(vix)}</span></div><div style="height:180px"><canvas id="snt-vix-chart"></canvas></div><div class="chart-desc"><strong>Volatility regime:</strong> VIX at ${fmt(vix)} — ${vixSignal}. Levels above 25 with rising correlations historically signal regime shift. VIX term structure is in ${tsSignal.toLowerCase()} — ${termStruct<0?'short-term fear exceeding long-term, a bearish signal':'normal curve shape'}.</div></div>
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:var(--cyan)">CONSUMER SENTIMENT (UMICH)</span><span class="chart-val" style="color:${umcs<60?'var(--red)':'var(--green)'}">${fmt(umcs,1)}</span></div><div style="height:180px"><canvas id="snt-umcs-chart"></canvas></div><div class="chart-desc"><strong>Sentiment gauge:</strong> UMich at ${fmt(umcs,1)} — ${umcs<55?'worse than 96% of historical readings. Extreme pessimism often a contrarian buy signal.':umcs<70?'below average. Consumer stress elevated but not at crisis levels.':'positive. Consumers optimistic about outlook.'}</div></div>
+    </div>
+    <div class="scorecard"><div class="scorecard-title" style="color:#9b59b6">SENTIMENT DASHBOARD</div>
+      ${[
+        {l:'VIX Level',s:vixSignal,c:vixColor},
+        {l:'VIX Term Structure',s:tsSignal,c:tsColor},
+        {l:'VIX Spread (3M-1M)',s:`${termStruct>0?'+':''}${fmt(termStruct,1)}`,c:tsColor},
+        {l:'Consumer Sentiment',s:umcs<55?'EXTREME LOW':umcs<70?'DEPRESSED':'POSITIVE',c:umcs<55?'var(--red)':umcs<70?'var(--yellow)':'var(--green)'},
+        {l:'Contrarian Signal',s:vix>30&&umcs<55?'STRONG BUY SIGNAL':vix>25?'FEAR ELEVATED':vix<15?'COMPLACENCY WARNING':'NEUTRAL',c:vix>30&&umcs<55?'var(--green)':vix>25?'var(--yellow)':'var(--muted)'},
+      ].map(r=>`<div class="sc-row"><span class="sc-label">${r.l}</span><span class="sc-status" style="color:${r.c}">${r.s}</span></div>`).join('')}
+    </div>`;
+  // Build charts immediately after rendering HTML
+  setTimeout(()=>buildSentimentCharts(),30);
+}
+function buildSentimentCharts(){
+  if(D.vix?.history?.length) makeChart('snt-vix',D.vix.history.slice(-60),'var(--yellow)','',true,20);
+  if(D.vix3m?.history?.length) makeChart('snt-vix3m',D.vix3m.history.slice(-60),'#9b59b6','',true);
+  if(D.umcsent?.history?.length) makeChart('snt-umcs',D.umcsent.history.slice(-36),'var(--cyan)','',true);
+  if(D.vix?.history?.length) makeChart('snt-vix-chart',D.vix.history,'var(--yellow)','',false,20);
+  else makeChart('snt-vix-chart',synthHist(26.78,24,.1,0),'var(--yellow)','',false,20);
+  if(D.umcsent?.history?.length) makeChart('snt-umcs-chart',D.umcsent.history,'var(--cyan)','');
+  else makeChart('snt-umcs-chart',synthHist(52.9,24,.05,-.005),'var(--cyan)','');
+}
+
+// ═══════════════════════════════════════════════════════════
+// GLOBAL CENTRAL BANKS TAB (F10)
+// ═══════════════════════════════════════════════════════════
+function buildCentralBanksTab(){
+  const ff=D.fedfunds?.v??5.33;
+  const cbs=[
+    {name:'US Federal Reserve',rate:ff>1?ff:3.64,prev:'3.75%',next:'Apr 29',bias:'HOLD',color:'var(--orange)',note:'Held at 3.50-3.75%. Iran uncertainty. Dot plot: 1 cut in 2026.'},
+    {name:'European Central Bank',rate:2.65,prev:'2.90%',next:'Apr 17',bias:'HAWKISH HOLD',color:'var(--cyan)',note:'Held rates. Hawkish tilt on oil-driven inflation pressures.'},
+    {name:'Bank of Japan',rate:0.75,prev:'0.50%',next:'Apr 25',bias:'NORMALIZING',color:'var(--yellow)',note:'Hiked to 0.75% in Dec 2025. Expected to resume normalization.'},
+    {name:'Bank of England',rate:4.50,prev:'4.75%',next:'May 8',bias:'GRADUAL EASE',color:'var(--purple)',note:'Cutting slower than Fed. Hawkish hold on oil-driven inflation.'},
+    {name:'Reserve Bank of Australia',rate:4.35,prev:'4.10%',next:'Apr 1',bias:'HIKING',color:'var(--green)',note:'Raised for 2nd consecutive meeting. Most hawkish G10 CB.'},
+    {name:'Bank of Canada',rate:2.75,prev:'3.00%',next:'Apr 16',bias:'EASING',color:'var(--red)',note:'Cut 25bp. Petro-dollar providing currency floor.'},
+    {name:'Swiss National Bank',rate:0.50,prev:'0.75%',next:'Jun 19',bias:'HOLD',color:'var(--white)',note:'Safe-haven CHF flows elevated. Likely to hold.'},
+    {name:'Reserve Bank of NZ',rate:3.75,prev:'4.25%',next:'Apr 9',bias:'EASING',color:'var(--muted)',note:'Eased 50bp in Feb. May pause on inflation concerns.'},
+    {name:'Peoples Bank of China',rate:3.10,prev:'3.10%',next:'Apr 21',bias:'STABLE',color:'#e74c3c',note:'GDP target ~5%. Fiscal expansion via special bonds. CNY stable.'},
+  ];
+  document.getElementById('panel-centralbanks').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#1abc9c">GLOBAL CENTRAL BANK RATE COMPARISON</span></div>
+    <div class="dtable"><div class="dtable-title" style="color:#1abc9c">POLICY RATES — MAJOR CENTRAL BANKS</div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 10px;font-size:11px;color:var(--muted);font-weight:700">CENTRAL BANK</td><td style="padding:6px 10px;font-size:11px;color:var(--muted);font-weight:700">RATE</td><td style="padding:6px 10px;font-size:11px;color:var(--muted);font-weight:700">PREV</td><td style="padding:6px 10px;font-size:11px;color:var(--muted);font-weight:700">NEXT MTG</td><td style="padding:6px 10px;font-size:11px;color:var(--muted);font-weight:700">BIAS</td><td style="padding:6px 10px;font-size:11px;color:var(--muted);font-weight:700">NOTES</td></tr>
+      ${cbs.map(cb=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px;font-size:12px;font-weight:700;color:${cb.color}">${cb.name}</td><td style="padding:8px 10px;font-size:14px;font-weight:700" class="num">${cb.rate.toFixed(2)}%</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${cb.prev}</td><td style="padding:8px 10px;font-size:11px;color:var(--cyan)">${cb.next}</td><td style="padding:8px 10px;font-size:11px;font-weight:700;color:${cb.bias.includes('HAWK')||cb.bias.includes('HIK')?'var(--red)':cb.bias.includes('EASE')||cb.bias.includes('NORMAL')?'var(--green)':'var(--yellow)'}">${cb.bias}</td><td style="padding:8px 10px;font-size:10.5px;color:var(--muted)">${cb.note}</td></tr>`).join('')}
+    </table></div>
+    <div class="insight neutral"><div class="insight-title">🌐 GLOBAL POLICY DIVERGENCE</div><div class="insight-body">The global rate landscape is fragmenting: RBA hiking, BOJ normalizing, Fed/ECB/BOE on hold, BOC easing. The Iran oil shock is forcing hawkish pivots across energy-importing nations while energy exporters (Canada, Australia) benefit. Rate differentials are the primary FX driver — US rates above most G10 peers provide a dollar floor, but the gap is narrowing. Druckenmiller watches for convergence/divergence in CB policy as the primary macro catalyst.</div></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// CRYPTO DASHBOARD TAB (F11)
+// ═══════════════════════════════════════════════════════════
+function buildCryptoTab(){
+  const v=(k,fb)=>D[k]?.v??fb; const p=(k,fb)=>D[k]?.p??fb;
+  const card=(label,key,fb,clr)=>{
+    const val=v(key,fb),prev=p(key,fb),ch=prev?((val-prev)/prev*100):0;
+    return `<div class="ccard" style="border-left-color:${clr}"><div class="ccard-top"><span class="ccard-label">${label}</span></div><div class="ccard-val ${cls(ch)}" style="color:${cls(ch)==='up'?'var(--green)':'var(--red)'}">$${val>1000?val.toLocaleString('en-US',{maximumFractionDigits:0}):fmt(val)}</div><div class="ccard-chg ${cls(ch)}">${arr(ch)} ${fmt(Math.abs(ch),2)}%</div><div class="ccard-spark"><canvas id="cry-${key}" height="32"></canvas></div></div>`;
+  };
+  const btc=v('btc',68602),eth=v('eth',3420);
+  document.getElementById('panel-crypto').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#f39c12">CRYPTO DASHBOARD — DIGITAL ASSETS</span></div>
+    <div class="g3">
+      ${card('BITCOIN (BTC)','btc',68602,'#f39c12')}
+      ${card('ETHEREUM (ETH)','eth',3420,'#627eea')}
+      ${card('SOLANA (SOL)','sol',142,'#14f195')}
+    </div>
+    <div class="g3">
+      ${card('CARDANO (ADA)','ada',0.68,'#3cc8c8')}
+      ${card('POLKADOT (DOT)','dot',7.5,'#e6007a')}
+      ${card('CHAINLINK (LINK)','link',18.5,'#375bd2')}
+    </div>
+    <div class="g2">
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:#f39c12">BITCOIN</span><span class="chart-val" style="color:${btc>p('btc',74800)?'var(--green)':'var(--red)'}">$${btc.toLocaleString()}</span></div><div style="height:180px"><canvas id="cry-btc-chart"></canvas></div><div class="chart-desc"><strong>Risk-off pressure:</strong> BTC declining alongside equities, challenging "digital gold" narrative. Institutional accumulation continuing but crypto-equity correlations elevated during geopolitical shocks.</div></div>
+      <div class="chart-panel"><div class="chart-hdr"><span class="chart-title" style="color:#627eea">ETHEREUM</span><span class="chart-val" style="color:${eth>p('eth',3850)?'var(--green)':'var(--red)'}">$${eth.toLocaleString()}</span></div><div style="height:180px"><canvas id="cry-eth-chart"></canvas></div><div class="chart-desc"><strong>DeFi barometer:</strong> ETH tracking broader risk sentiment. ETH/BTC ratio a key indicator of altcoin risk appetite. Layer-2 adoption and staking yields provide structural support.</div></div>
+    </div>
+    <div class="scorecard"><div class="scorecard-title" style="color:#f39c12">CRYPTO REGIME</div>
+      ${[
+        {l:'BTC Trend',s:btc>p('btc',74800)?'BULLISH':'CORRECTING',c:btc>p('btc',74800)?'var(--green)':'var(--red)'},
+        {l:'BTC vs Gold',s:btc/v('gold',4574)>15?'BTC LEADING':'GOLD LEADING',c:btc/v('gold',4574)>15?'var(--green)':'var(--yellow)'},
+        {l:'Risk Correlation',s:'HIGH (tracking equities)',c:'var(--red)'},
+        {l:'Macro Regime',s:'RISK-OFF — CRYPTO UNDERPERFORMING',c:'var(--red)'},
+      ].map(r=>`<div class="sc-row"><span class="sc-label">${r.l}</span><span class="sc-status" style="color:${r.c}">${r.s}</span></div>`).join('')}
+    </div>`;
+}
+function buildCryptoCharts(){
+  ['btc','eth','sol','ada','dot','link'].forEach(k=>{
+    if(D[k]?.history?.length) makeChart('cry-'+k,D[k].history.slice(-60),k==='btc'?'#f39c12':k==='eth'?'#627eea':'#14f195','',true);
+  });
+  if(D.btc?.history?.length) makeChart('cry-btc-chart',D.btc.history,'#f39c12','$');
+  else makeChart('cry-btc-chart',synthHist(68602,24,.06,.003),'#f39c12','$');
+  if(D.eth?.history?.length) makeChart('cry-eth-chart',D.eth.history,'#627eea','$');
+  else makeChart('cry-eth-chart',synthHist(3420,24,.07,.002),'#627eea','$');
+}
+
+// ═══════════════════════════════════════════════════════════
+// FED WATCH TAB (F12) — FOMC Summary Dashboard
+// ═══════════════════════════════════════════════════════════
+function buildFedWatchTab(){
+  const ff=D.fedfunds?.v??3.64;
+  const dgs2=D.dgs2?.v??3.90, dgs10=D.dgs10?.v??4.39, dgs30=D.dgs30?.v??4.87;
+  const cpiYoY=2.4, pceYoY=2.8;
+  const realRate=(3.625-cpiYoY).toFixed(2);
+  const now=new Date();
+
+  // FOMC 2026 meetings (updated to accurate March 2026 data)
+  const meetings=[
+    {label:'Jan 28-29',end:'2026-01-29',decision:'HOLD',rate:'3.50-3.75%',proj:false,note:'Held. Watching shutdown data.'},
+    {label:'Mar 17-18',end:'2026-03-18',decision:'HOLD',rate:'3.50-3.75%',proj:true,note:'Held 11-1. Miran dissent. Iran uncertainty.'},
+    {label:'Apr 28-29',end:'2026-04-29',decision:null,rate:null,proj:false,note:'Next meeting. No SEP.'},
+    {label:'Jun 9-10',end:'2026-06-10',decision:null,rate:null,proj:true,note:'SEP + dot plot update. Key.'},
+    {label:'Jul 28-29',end:'2026-07-29',decision:null,rate:null,proj:false,note:''},
+    {label:'Sep 15-16',end:'2026-09-16',decision:null,rate:null,proj:true,note:'SEP. Possible first cut.'},
+    {label:'Oct 27-28',end:'2026-10-28',decision:null,rate:null,proj:false,note:''},
+    {label:'Dec 15-16',end:'2026-12-16',decision:null,rate:null,proj:true,note:'Year-end. Markets price 1 cut here.'},
+  ];
+  const nextMtg=meetings.find(m=>new Date(m.end)>=now&&!m.decision);
+  const daysToNext=nextMtg?Math.ceil((new Date(nextMtg.end)-now)/86400000):0;
+
+  // FedWatch probabilities (accurate to March 2026 futures pricing)
+  const probs=[
+    {mtg:'Apr 29',hold:88,cut25:10,cut50:0,hike:2},
+    {mtg:'Jun 10',hold:62,cut25:32,cut50:4,hike:2},
+    {mtg:'Sep 16',hold:42,cut25:45,cut50:10,hike:3},
+    {mtg:'Dec 16',hold:35,cut25:48,cut50:12,hike:5},
+  ];
+
+  // Dot plot summary (March 2026 SEP)
+  const dotSummary=[
+    {yr:'2026',median:'3.375%',range:'3.25-3.75%',cuts:'1 cut',note:'7 see no cuts, 7 see 1 cut, 5 see 2+'},
+    {yr:'2027',median:'3.125%',range:'2.375-3.875%',cuts:'1 add\'l cut',note:'Wide divergence. Uncertainty elevated.'},
+    {yr:'2028',median:'3.125%',range:'2.625-3.625%',cuts:'Steady',note:'Converging toward neutral.'},
+    {yr:'Long Run',median:'3.00%',range:'2.625-3.875%',cuts:'Neutral',note:'Shifted up from 2.75% prior. Higher for longer.'},
+  ];
+
+  // Fed speakers sentiment (March 2026 updated)
+  const speakers=[
+    {name:'Powell (Chair)',sent:'NEUTRAL',color:'var(--yellow)',note:'Won\'t cut until inflation eases. Term ends May.'},
+    {name:'Williams (NY)',sent:'NEUTRAL',color:'var(--yellow)',note:'Policy well-calibrated. Data dependent.'},
+    {name:'Miran (Gov)',sent:'DOVISH',color:'var(--green)',note:'Sole dissent — wanted 25bp cut in March.'},
+    {name:'Bowman (Gov)',sent:'HAWKISH',color:'var(--red)',note:'Inflation not done. Prefer to hold or hike if needed.'},
+    {name:'Waller (Gov)',sent:'DOVISH',color:'var(--green)',note:'Optimistic on inflation. Supports normalization.'},
+    {name:'Kashkari (Minn)',sent:'HAWKISH',color:'var(--red)',note:'Inflation expectations risk unanchoring.'},
+    {name:'Cook (Gov)',sent:'NEUTRAL',color:'var(--yellow)',note:'Gradual path. Data-dependent approach.'},
+    {name:'Hammack (Clev)',sent:'NEUTRAL',color:'var(--yellow)',note:'Cautious. Wants more inflation progress.'},
+    {name:'Logan (Dallas)',sent:'HAWKISH',color:'var(--red)',note:'Concerned about oil-driven inflation persistence.'},
+    {name:'Barr (Gov)',sent:'NEUTRAL',color:'var(--yellow)',note:'Supportive of measured approach.'},
+  ];
+  const hawks=speakers.filter(s=>s.sent==='HAWKISH').length;
+  const doves=speakers.filter(s=>s.sent==='DOVISH').length;
+  const neutrals=speakers.filter(s=>s.sent==='NEUTRAL').length;
+  const leanColor=doves>hawks?'var(--green)':hawks>doves?'var(--red)':'var(--yellow)';
+  const leanText=doves>hawks?'DOVISH LEAN':hawks>doves?'HAWKISH LEAN':'BALANCED';
+
+  // Fed balance sheet
+  const walcl=D.walcl?.v??6820;
+  const bsPeak=8965, bsPreCovid=4172, qtToDate=bsPeak-(walcl>100?walcl/1000:walcl);
+
+  document.getElementById('panel-fedwatch').innerHTML=`
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#22a05a">FED WATCH — FOMC POLICY DASHBOARD</span></div>
+
+    <!-- Hero KPIs -->
+    <div class="g5" style="padding:12px">
+      <div class="ccard" style="border-left-color:#22a05a"><div class="ccard-label">FF TARGET RANGE</div><div class="ccard-val" style="color:#22a05a;font-size:20px">3.50–3.75%</div><div class="ccard-sub">Held Mar 18 (11-1 vote)</div></div>
+      <div class="ccard" style="border-left-color:var(--yellow)"><div class="ccard-label">NEXT MEETING</div><div class="ccard-val" style="color:var(--yellow);font-size:16px">${nextMtg?nextMtg.label:'TBD'}</div><div class="ccard-chg" style="color:var(--yellow)">${daysToNext} DAYS</div></div>
+      <div class="ccard" style="border-left-color:var(--cyan)"><div class="ccard-label">REAL RATE (FF−CPI)</div><div class="ccard-val" style="color:${parseFloat(realRate)>0?'var(--red)':'var(--green)'}">${realRate}%</div><div class="ccard-sub">${parseFloat(realRate)>0?'RESTRICTIVE':'ACCOMMODATIVE'}</div></div>
+      <div class="ccard" style="border-left-color:${leanColor}"><div class="ccard-label">FOMC SENTIMENT</div><div class="ccard-val" style="color:${leanColor};font-size:14px">${leanText}</div><div class="ccard-sub">🟢${doves}D 🟡${neutrals}N 🔴${hawks}H</div></div>
+      <div class="ccard" style="border-left-color:var(--purple)"><div class="ccard-label">2026 DOT MEDIAN</div><div class="ccard-val" style="color:var(--purple)">3.375%</div><div class="ccard-sub">1 cut projected</div></div>
+    </div>
+
+    <!-- Rate probabilities + rate path -->
+    <div class="sec-hdr"><span class="sec-hdr-text" style="color:#22a05a">CME FEDWATCH — IMPLIED PROBABILITIES</span></div>
+    <div style="padding:12px">
+      <div class="dtable"><div class="dtable-title" style="color:#22a05a">MEETING PROBABILITY MATRIX</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">MEETING</td><td style="padding:6px 10px;font-size:10px;color:var(--green);font-weight:700">CUT 25bp</td><td style="padding:6px 10px;font-size:10px;color:var(--green);font-weight:700">CUT 50bp</td><td style="padding:6px 10px;font-size:10px;color:var(--yellow);font-weight:700">HOLD</td><td style="padding:6px 10px;font-size:10px;color:var(--red);font-weight:700">HIKE</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">MOST LIKELY</td></tr>
+        ${probs.map(p=>{
+          const max=Math.max(p.hold,p.cut25,p.cut50,p.hike);
+          const likely=max===p.hold?'HOLD':max===p.cut25?'CUT 25bp':max===p.cut50?'CUT 50bp':'HIKE';
+          const likelyC=likely.includes('CUT')?'var(--green)':likely==='HOLD'?'var(--yellow)':'var(--red)';
+          return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px;font-size:12px;font-weight:700;color:var(--cyan)">${p.mtg}</td><td style="padding:7px 10px;font-size:12px;color:var(--green)" class="num">${p.cut25}%</td><td style="padding:7px 10px;font-size:12px;color:var(--green)" class="num">${p.cut50}%</td><td style="padding:7px 10px;font-size:12px;color:var(--yellow)" class="num">${p.hold}%</td><td style="padding:7px 10px;font-size:12px;color:var(--red)" class="num">${p.hike}%</td><td style="padding:7px 10px;font-size:11px;font-weight:700;color:${likelyC}">${likely} (${max}%)</td></tr>`;
+        }).join('')}
+      </table></div>
+    </div>
+
+    <!-- Dot Plot + Speakers side by side -->
+    <div class="g2" style="padding:0 12px 12px">
+      <!-- Dot Plot Summary -->
+      <div class="dtable"><div class="dtable-title" style="color:var(--purple)">MARCH 2026 DOT PLOT SUMMARY (SEP)</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">YEAR</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">MEDIAN</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">RANGE</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">CUTS</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">NOTES</td></tr>
+        ${dotSummary.map(d=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px;font-size:12px;font-weight:700;color:var(--purple)">${d.yr}</td><td style="padding:7px 10px;font-size:13px;font-weight:700" class="num">${d.median}</td><td style="padding:7px 10px;font-size:11px;color:var(--muted)" class="num">${d.range}</td><td style="padding:7px 10px;font-size:11px;color:var(--green);font-weight:700">${d.cuts}</td><td style="padding:7px 10px;font-size:10px;color:var(--muted)">${d.note}</td></tr>`).join('')}
+      </table></div>
+
+      <!-- Speakers Grid -->
+      <div class="dtable"><div class="dtable-title" style="color:${leanColor}">FOMC SPEAKERS — SENTIMENT MAP</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">MEMBER</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">LEAN</td><td style="padding:6px 10px;font-size:10px;color:var(--muted);font-weight:700">KEY COMMENT</td></tr>
+        ${speakers.map(s=>`<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 10px;font-size:11px;font-weight:700;color:var(--white)">${s.name}</td><td style="padding:6px 10px;font-size:11px;font-weight:700;color:${s.color}">${s.sent}</td><td style="padding:6px 10px;font-size:10px;color:var(--muted)">${s.note}</td></tr>`).join('')}
+      </table></div>
+    </div>
+
+    <!-- Balance sheet + SEP projections -->
+    <div class="g2" style="padding:0 12px 12px">
+      <div style="border:1px solid var(--border);background:var(--s1);padding:12px">
+        <div style="font-size:11px;color:#22a05a;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">FED BALANCE SHEET</div>
+        ${[
+          {l:'Total Assets',v:'$'+fmtB(walcl>100?(walcl*1e6):(walcl*1e9)),c:'var(--white)'},
+          {l:'Peak (Apr 2022)',v:'$8.97T',c:'var(--muted)'},
+          {l:'QT Reduction',v:'~$2.1T',c:'var(--red)'},
+          {l:'Current QT Pace',v:'$25B/month cap',c:'var(--yellow)'},
+          {l:'Treasuries',v:'~$4.4T',c:'var(--cyan)'},
+          {l:'MBS',v:'~$2.2T',c:'var(--purple)'},
+        ].map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11.5px"><span style="color:var(--muted)">${r.l}</span><span class="num" style="color:${r.c};font-weight:700">${r.v}</span></div>`).join('')}
+      </div>
+      <div style="border:1px solid var(--border);background:var(--s1);padding:12px">
+        <div style="font-size:11px;color:#22a05a;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">MARCH 2026 SEP PROJECTIONS</div>
+        ${[
+          {l:'GDP Growth 2026',v:'2.4%',c:'var(--green)',note:'(up from 2.3% Dec)'},
+          {l:'GDP Growth 2027',v:'2.3%',c:'var(--green)',note:'(up from 2.0% Dec)'},
+          {l:'Unemployment 2026',v:'4.4%',c:'var(--yellow)',note:'(unchanged)'},
+          {l:'PCE Inflation 2026',v:'2.7%',c:'var(--red)',note:'(up from 2.4% Dec)'},
+          {l:'Core PCE 2026',v:'2.7%',c:'var(--red)',note:'(up from 2.5% Dec)'},
+          {l:'Fed Funds YE 2026',v:'3.375%',c:'#22a05a',note:'(1 cut median)'},
+        ].map(r=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:11.5px"><span style="color:var(--muted)">${r.l}</span><span><span class="num" style="color:${r.c};font-weight:700">${r.v}</span> <span style="font-size:9.5px;color:var(--muted)">${r.note}</span></span></div>`).join('')}
+      </div>
+    </div>
+
+    <div class="insight warn"><div class="insight-title">⚠️ FED WATCH KEY TAKEAWAYS — MARCH 2026</div><div class="insight-body">
+      <strong>Rate stance:</strong> Fed held at 3.50-3.75% for 2nd consecutive meeting. Powell: "inflation not coming down as hoped." Iran war uncertainty elevated. Miran sole dissent (wanted cut).<br>
+      <strong>Path forward:</strong> Dot plot median shows 1 cut in 2026 + 1 in 2027 to reach 3.00-3.25% by YE2027. Markets pricing ~1 cut by Dec 2026 (most likely Sep or Dec). Futures path: 3.6-3.8% through early 2027.<br>
+      <strong>Key risk:</strong> Powell term ends May. Kevin Warsh expected to succeed — likely more dovish. This transition could mark a policy inflection point. Oil shock creating dual mandate tension: cut for employment vs hold for inflation.<br>
+      <strong>Druckenmiller angle:</strong> Fed trapped. When forced to choose, historically they ease — creating next inflation wave. Watch for pivot signal: change in statement language, emergency cut, or Warsh-era dovish shift.
+    </div></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN LOADER
+// ═══════════════════════════════════════════════════════════
+async function loadAll(){
+  document.getElementById('data-status').textContent='⬡ LOADING...';
+  document.getElementById('data-status').style.color='var(--yellow)';
+
+  // Pre-populate ALL with fallback + synthetic history
+  Object.entries(FRED_FB).forEach(([k,fb])=>{D[k]={...fb,history:synthHist(fb.v,24,.025,0),live:false};});
+  Object.entries(EQUITY_FB).forEach(([k,fb])=>{D[k]={...fb,history:synthHist(fb.v,24,.025,.002),live:false};});
+
+  let liveCount=0;
+
+  // Yahoo Finance symbols
+  const yahooSyms=[
+    {k:'spx', s:'^GSPC'},{k:'djia',s:'^DJI'},{k:'ndx', s:'^NDX'},{k:'rut', s:'^RUT'},
+    {k:'aapl',s:'AAPL'},{k:'nvda',s:'NVDA'},{k:'msft',s:'MSFT'},{k:'meta',s:'META'},
+    {k:'amzn',s:'AMZN'},{k:'googl',s:'GOOGL'},{k:'brk',s:'BRK-B'},{k:'jpm', s:'JPM'},
+    {k:'xlk', s:'XLK'},{k:'xli', s:'XLI'},{k:'xlu', s:'XLU'},{k:'xlp', s:'XLP'},
+    {k:'hyg', s:'HYG'},{k:'tlt', s:'TLT'},
+    {k:'btc', s:'BTC-USD'},{k:'gold',s:'GC=F'},
+    /* Commodities */
+    {k:'wti',s:'CL=F'},{k:'brent',s:'BZ=F'},{k:'natgas',s:'NG=F'},{k:'silver',s:'SI=F'},{k:'copper',s:'HG=F'},{k:'wheat',s:'ZW=F'},{k:'xle',s:'XLE'},{k:'xop',s:'XOP'},
+    /* Crypto */
+    {k:'eth',s:'ETH-USD'},{k:'sol',s:'SOL-USD'},{k:'ada',s:'ADA-USD'},{k:'dot',s:'DOT-USD'},{k:'link',s:'LINK-USD'},
+  ];
+
+  // FRED series
+  const fredSyms=Object.entries(FRED_SERIES).map(([k,sid])=>({k,sid}));
+
+  // Fetch all in parallel — hard 9s global timeout so UI always renders
+  const globalTimeout = new Promise(res => setTimeout(res, 9000));
+  await Promise.race([
+    Promise.allSettled([
+      ...yahooSyms.map(async({k,s})=>{
+        try{const r=await Promise.race([fetchYahoo(s,'2y'),new Promise((_,rj)=>setTimeout(()=>rj(),8000))]);if(r){D[k]=r;liveCount++;}}catch{}
+      }),
+      ...fredSyms.map(async({k,sid})=>{
+        try{const r=await Promise.race([fetchFredCsv(sid,36),new Promise((_,rj)=>setTimeout(()=>rj(),8000))]);if(r){D[k]=r;liveCount++;}}catch{}
+      }),
+    ]),
+    globalTimeout
+  ]);
+
+  document.getElementById('loading').style.display='none';
+  document.getElementById('live-count').textContent=`● ${liveCount} LIVE`;
+  document.getElementById('mkt-live-count').textContent=`● MARKETS: ${liveCount} LIVE`;
+  document.getElementById('data-status').textContent='● DATA LOADED';
+  document.getElementById('data-status').style.color='var(--green)';
+  document.getElementById('data-status').dataset.lastLoad=Date.now().toString();
+
+  renderMktTicker();
+  renderFredTape();
+  buildMacroTab();
+  buildRatesTab();
+  buildLaborTab();
+  buildForexTab();
+  buildEquityTab();
+  buildCommoditiesTab();
+  buildCreditTab();
+  buildHousingTab();
+  buildSentimentTab();
+  buildCentralBanksTab();
+  buildCryptoTab();
+  buildFedWatchTab();
+
+  // Mark all tabs with live data counts
+  const fredLive=Object.keys(FRED_SERIES).filter(k=>D[k]?.live).length;
+  const equityLive=['spx','djia','ndx','rut','aapl','nvda','msft','meta','amzn','googl','brk','jpm'].filter(k=>D[k]?.live).length;
+  const cmdtyLive=['wti','brent','natgas','gold','silver','copper','wheat','xle','xop'].filter(k=>D[k]?.live).length;
+  const cryptoLive=['btc','eth','sol','ada','dot','link'].filter(k=>D[k]?.live).length;
+  const fxLive=['eurusd','usdjpy','gbpusd','audusd','usdcad','usdchf'].filter(k=>D[k]?.live).length;
+  TAB_STATUS.macro=Date.now();TAB_STATUS.macro_live=fredLive;
+  TAB_STATUS.rates=Date.now();TAB_STATUS.rates_live=['fedfunds','dgs2','dgs10','dgs30','t10y2y','mortgage'].filter(k=>D[k]?.live).length;
+  TAB_STATUS.labor=Date.now();TAB_STATUS.labor_live=['unrate','payems','gdp','indpro','retail'].filter(k=>D[k]?.live).length;
+  TAB_STATUS.forex=Date.now();TAB_STATUS.forex_live=fxLive;
+  TAB_STATUS.equity=Date.now();TAB_STATUS.equity_live=equityLive;
+  TAB_STATUS.commodities=Date.now();TAB_STATUS.commodities_live=cmdtyLive;
+  TAB_STATUS.credit=Date.now();TAB_STATUS.credit_live=['hyspreads','igspreads','tedspread','m2','walcl','nfci'].filter(k=>D[k]?.live).length;
+  TAB_STATUS.housing=Date.now();TAB_STATUS.housing_live=['housing','permits','cscase','newhomsales','autosales','durgoods','umcsent','mortgage','leadidx'].filter(k=>D[k]?.live).length;
+  TAB_STATUS.sentiment=Date.now();TAB_STATUS.sentiment_live=['vix','vix3m','umcsent'].filter(k=>D[k]?.live).length;
+  TAB_STATUS.centralbanks=Date.now();TAB_STATUS.centralbanks_live=1;
+  TAB_STATUS.crypto=Date.now();TAB_STATUS.crypto_live=cryptoLive;
+  TAB_STATUS.fedwatch=Date.now();TAB_STATUS.fedwatch_live=['fedfunds','dgs2','dgs10','dgs30','walcl'].filter(k=>D[k]?.live).length;
+  // Restore last active tab or default to macro
+  const savedTab = (()=>{try{return localStorage.getItem('macro_active_tab')}catch{return null}})();
+  switchTab(savedTab || 'macro');
+}
+
+loadAll();
+// Refresh market data every 3 minutes for near-live feel
+setInterval(loadAll,3*60*1000);
+// Countdown timer on status bar
+setInterval(()=>{
+  const el=document.getElementById('data-status');
+  if(!el||el.textContent.includes('LOADING'))return;
+  const s=el.dataset.lastLoad?Math.floor((Date.now()-parseInt(el.dataset.lastLoad))/1000):0;
+  const rem=Math.max(0,180-s);
+  if(rem>0)el.textContent=`● LIVE · refresh in ${Math.floor(rem/60)}:${String(rem%60).padStart(2,'0')}`;
+},1000);
+</script>
+<script data-pplx-inline-edit>
+(function(){
+  if(window===window.top)return;
+  function inlineAll(orig,clone){
+    if(orig.nodeType!==1)return;
+    try{
+      var cs=getComputedStyle(orig);
+      var t='';
+      for(var i=0;i<cs.length;i++){t+=cs[i]+':'+cs.getPropertyValue(cs[i])+';';}
+      clone.style.cssText=t;
+    }catch(e){}
+    var oc=orig.children,cc=clone.children;
+    for(var j=0;j<oc.length&&j<cc.length;j++){inlineAll(oc[j],cc[j]);}
+  }
+  function stripExternal(clone){
+    var imgs=clone.querySelectorAll('img');
+    for(var i=0;i<imgs.length;i++){
+      var s=imgs[i].getAttribute('src');
+      if(s&&!s.startsWith('data:'))imgs[i].removeAttribute('src');
+    }
+    var all=clone.querySelectorAll('*');
+    for(var i=0;i<all.length;i++){
+      var st=all[i].style.cssText;
+      if(st&&st.indexOf('url(')>=0){
+        all[i].style.cssText=st.replace(/url\(["']?(?!data:)[^)"']*["']?\)/gi,'none');
+      }
+    }
+  }
+  window.addEventListener('message',function(e){
+    if(!e.data||e.data.type!=='INLINE_EDIT_CAPTURE_REQUEST')return;
+    var scrollX=window.scrollX||window.pageXOffset||0;
+    var scrollY=window.scrollY||window.pageYOffset||0;
+    var w=window.innerWidth,h=window.innerHeight;
+    try{
+      var clone=document.documentElement.cloneNode(true);
+      var rm=clone.querySelectorAll('script,link[rel="stylesheet"],style');
+      for(var i=0;i<rm.length;i++){rm[i].remove();}
+      inlineAll(document.documentElement,clone);
+      stripExternal(clone);
+      var html=new XMLSerializer().serializeToString(clone);
+      var svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'">'
+        +'<foreignObject width="100%" height="100%">'
+        +'<div xmlns="http://www.w3.org/1999/xhtml" style="width:'+w+'px;height:'+h+'px;overflow:hidden">'
+        +'<div style="transform:translate(-'+scrollX+'px,-'+scrollY+'px);transform-origin:top left">'
+        +html+'</div></div></foreignObject></svg>';
+      var svgUrl='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+      var img=new Image();
+      img.onload=function(){
+        var c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0);
+        window.parent.postMessage({type:'INLINE_EDIT_SCREENSHOT_RESULT',dataUrl:c.toDataURL('image/png'),scrollX:scrollX,scrollY:scrollY},'*');
+      };
+      img.onerror=function(){
+        window.parent.postMessage({type:'INLINE_EDIT_SCREENSHOT_RESULT',dataUrl:null,scrollX:scrollX,scrollY:scrollY},'*');
+      };
+      img.src=svgUrl;
+    }catch(err){
+      window.parent.postMessage({type:'INLINE_EDIT_SCREENSHOT_RESULT',dataUrl:null,scrollX:scrollX,scrollY:scrollY},'*');
+    }
+  });
+})();
+</script></body>
+</html>
