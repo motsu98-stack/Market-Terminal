@@ -1,4 +1,4 @@
-# MARKET TERMINAL v13 : Just a Hobbby: A work in Progress.. Any Suggestions would be great
+# MARKET TERMINAL v13
 
 A Bloomberg-style macroeconomic dashboard with 12 live data tabs, TV player, and real-time news feeds.
 
